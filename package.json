@@ -1,0 +1,11 @@
+{
+  "name": "sparta-e-commerce-mock-api",
+  "version": "1.0.0",
+  "scripts": {
+    "mock": "prism mock mock-server/openapi.yaml -p 8080",
+    "mock:dynamic": "prism mock mock-server/openapi.yaml -p 8080 -d"
+  },
+  "devDependencies": {
+    "@stoplight/prism-cli": "^5.14.2"
+  }
+}
