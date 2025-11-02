@@ -89,6 +89,7 @@ erDiagram
         varchar  product_name  "상품명"
         varchar  description   "상품 설명"
         int      quantity      "재고 수량"
+        int      price         "가격"
         datetime created_at    "등록일시"
         datetime updated_at    "수정일시"
     }
