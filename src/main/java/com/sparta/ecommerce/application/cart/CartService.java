@@ -13,6 +13,10 @@ import java.util.List;
 public class CartService {
     private final CartRepository cartRepository;
 
+    public CartItemResponse save(CartItem cartItem){
+        return cartRepository.save(cartItem).from();
+    }
+
     public List<CartItemResponse> getCartItems(Long userId) {
         return cartRepository.findAllByUserId(userId).stream()
                 .map(CartItem::from)

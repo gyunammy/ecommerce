@@ -25,6 +25,13 @@ public class InMemoryCartRepository implements CartRepository {
     }
 
     @Override
+    public CartItem save(CartItem cartItem) {
+        CartItem saveCartItem = new CartItem(cursor++, cartItem.getUserId(), cartItem.getProductId(), cartItem.getQuantity(), cartItem.getCreateAt(), cartItem.getCreateAt());
+        table.put(cursor, saveCartItem);
+        return saveCartItem;
+    }
+
+    @Override
     public List<CartItem> findAllByUserId(Long userId) {
         return table.values()
                 .stream()
