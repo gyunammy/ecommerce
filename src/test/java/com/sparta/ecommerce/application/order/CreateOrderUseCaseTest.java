@@ -542,4 +542,146 @@ class CreateOrderUseCaseTest {
         // 장바구니 clear는 성공한 주문 수만큼 호출되어야 함
         verify(cartService, times(productStock)).clearCart(anyLong());
     }
+
+    @Test
+    @DisplayName("주문 생성 실패 시 쿠폰, 포인트, 재고가 롤백된다")
+    void rollbackOnOrderCreationFailure() {
+        // given
+        Long userId = 1L;
+        Long userCouponId = 100L;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 사용자 (초기 포인트 100,000)
+        User user = new User(userId, "testUser", 100000, now);
+        given(userService.getUserById(userId)).willReturn(user);
+
+        // 장바구니 (상품 1개, 수량 5)
+        Long productId = 10L;
+        CartItemResponse cartItem = new CartItemResponse(1L, userId, productId, 5, now, now);
+        given(cartService.getCartItems(userId)).willReturn(List.of(cartItem));
+
+        // 상품 (초기 재고 100개, 가격 10,000원)
+        Product product = new Product(productId, "테스트상품", "설명", 100, 10000, 50, now, now);
+        given(productService.getProductMap(any())).willReturn(Map.of(productId, product));
+
+        // 쿠폰 (5,000원 할인)
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, now, null);
+        Coupon coupon = new Coupon(1L, "5000원 할인", "AMOUNT", 5000, 100, 10, 5, now, now);
+        UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
+        given(userCouponService.validateAndGetCoupon(userCouponId, userId)).willReturn(validatedCoupon);
+
+        // OrderService에서 예외 발생 (주문 생성 실패)
+        given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
+                .willThrow(new RuntimeException("주문 생성 중 예외 발생"));
+
+        // when & then
+        assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, userCouponId))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("주문 생성 중 예외 발생");
+
+        // 롤백 확인
+        // 1. 쿠폰 사용 취소 확인
+        assertThat(userCoupon.isUsed()).isFalse();
+        assertThat(userCoupon.getUsedAt()).isNull();
+        verify(userCouponService).updateUserCoupon(userCoupon);
+
+        // 2. 포인트 복구 확인 (50,000 - 5,000 = 45,000 차감 후 롤백하여 100,000으로 복구)
+        assertThat(user.getPoint()).isEqualTo(100000);
+        verify(userService, times(2)).updateUser(user); // 차감 시 1번, 복구 시 1번
+
+        // 3. 재고 복구 확인 (100 - 5 = 95 차감 후 롤백하여 100으로 복구)
+        assertThat(product.getQuantity()).isEqualTo(100);
+        verify(productService, times(2)).updateProduct(product); // 차감 시 1번, 복구 시 1번
+    }
+
+    @Test
+    @DisplayName("주문 생성 실패 시 쿠폰 없이도 포인트와 재고가 롤백된다")
+    void rollbackWithoutCouponOnFailure() {
+        // given
+        Long userId = 1L;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 사용자 (초기 포인트 100,000)
+        User user = new User(userId, "testUser", 100000, now);
+        given(userService.getUserById(userId)).willReturn(user);
+
+        // 장바구니 (상품 1개, 수량 3)
+        Long productId = 20L;
+        CartItemResponse cartItem = new CartItemResponse(1L, userId, productId, 3, now, now);
+        given(cartService.getCartItems(userId)).willReturn(List.of(cartItem));
+
+        // 상품 (초기 재고 50개, 가격 20,000원)
+        Product product = new Product(productId, "테스트상품2", "설명2", 50, 20000, 30, now, now);
+        given(productService.getProductMap(any())).willReturn(Map.of(productId, product));
+
+        // OrderService에서 예외 발생
+        given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
+                .willThrow(new RuntimeException("시스템 오류"));
+
+        // when & then
+        assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, null)) // 쿠폰 미사용
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("시스템 오류");
+
+        // 롤백 확인
+        // 1. 포인트 복구 확인 (60,000원 차감 후 롤백하여 100,000으로 복구)
+        assertThat(user.getPoint()).isEqualTo(100000);
+        verify(userService, times(2)).updateUser(user); // 차감 시 1번, 복구 시 1번
+
+        // 2. 재고 복구 확인 (50 - 3 = 47 차감 후 롤백하여 50으로 복구)
+        assertThat(product.getQuantity()).isEqualTo(50);
+        verify(productService, times(2)).updateProduct(product); // 차감 시 1번, 복구 시 1번
+
+        // 3. 쿠폰 관련 메서드는 호출되지 않아야 함
+        verify(userCouponService, never()).updateUserCoupon(any());
+    }
+
+    @Test
+    @DisplayName("여러 상품 주문 실패 시 모든 상품의 재고가 롤백된다")
+    void rollbackMultipleProductsOnFailure() {
+        // given
+        Long userId = 1L;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 사용자
+        User user = new User(userId, "testUser", 200000, now);
+        given(userService.getUserById(userId)).willReturn(user);
+
+        // 장바구니 (3개 상품)
+        Long productId1 = 10L;
+        Long productId2 = 20L;
+        Long productId3 = 30L;
+        CartItemResponse cartItem1 = new CartItemResponse(1L, userId, productId1, 2, now, now); // 2개 x 10,000 = 20,000
+        CartItemResponse cartItem2 = new CartItemResponse(2L, userId, productId2, 3, now, now); // 3개 x 5,000 = 15,000
+        CartItemResponse cartItem3 = new CartItemResponse(3L, userId, productId3, 1, now, now); // 1개 x 15,000 = 15,000
+        given(cartService.getCartItems(userId)).willReturn(List.of(cartItem1, cartItem2, cartItem3));
+
+        // 상품들
+        Product product1 = new Product(productId1, "상품1", "설명1", 100, 10000, 50, now, now);
+        Product product2 = new Product(productId2, "상품2", "설명2", 200, 5000, 100, now, now);
+        Product product3 = new Product(productId3, "상품3", "설명3", 150, 15000, 80, now, now);
+        given(productService.getProductMap(any())).willReturn(
+                Map.of(productId1, product1, productId2, product2, productId3, product3)
+        );
+
+        // OrderService에서 예외 발생
+        given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
+                .willThrow(new RuntimeException("데이터베이스 연결 오류"));
+
+        // when & then
+        assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, null))
+                .isInstanceOf(RuntimeException.class);
+
+        // 롤백 확인
+        // 1. 포인트 복구 (50,000원 차감 후 롤백)
+        assertThat(user.getPoint()).isEqualTo(200000);
+
+        // 2. 모든 상품의 재고 복구
+        assertThat(product1.getQuantity()).isEqualTo(100); // 98 -> 100으로 복구
+        assertThat(product2.getQuantity()).isEqualTo(200); // 197 -> 200으로 복구
+        assertThat(product3.getQuantity()).isEqualTo(150); // 149 -> 150으로 복구
+
+        // 3. 각 상품의 updateProduct 호출 확인 (차감 + 복구)
+        verify(productService, times(6)).updateProduct(any(Product.class)); // 3개 상품 * 2 = 6
+    }
 }
