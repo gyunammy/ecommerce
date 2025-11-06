@@ -7,8 +7,10 @@ import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
+import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.product.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
+import com.sparta.ecommerce.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +23,11 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.INSUFFICIENT_STOCK;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -444,5 +451,95 @@ class CreateOrderUseCaseTest {
         verify(productService).updateProduct(product1);
         verify(productService).updateProduct(product2);
         verify(productService).updateProduct(product3);
+    }
+
+    @Test
+    @DisplayName("동시에 여러 스레드가 주문을 시도해도 synchronized로 동기화된다")
+    void concurrentCreateOrder() throws InterruptedException {
+        // given
+        int threadCount = 100;
+        int productStock = 50; // 상품 재고 50개
+        int orderQuantityPerUser = 1; // 각 사용자가 주문하는 수량
+
+        LocalDateTime now = LocalDateTime.now();
+        Long productId = 1L;
+
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failCount = new AtomicInteger(0);
+
+        // 실제 Product 객체 생성 (재고를 공유하도록)
+        Product sharedProduct = new Product(productId, "테스트상품", "설명", productStock, 10000, 50, now, now);
+
+        // ProductService Mock 설정 - getProductMap에서 공유 Product 반환
+        given(productService.getProductMap(any())).willReturn(Map.of(productId, sharedProduct));
+        doAnswer(invocation -> {
+            // updateProduct 호출 시 실제로는 아무것도 하지 않음 (재고는 도메인 모델에서 관리)
+            return null;
+        }).when(productService).updateProduct(any());
+
+        // User Mock 설정 - 충분한 포인트를 가진 사용자
+        given(userService.getUserById(anyLong())).willAnswer(invocation -> {
+            Long userId = invocation.getArgument(0);
+            return new User(userId, "user" + userId, 1000000, now); // 충분한 포인트
+        });
+        doNothing().when(userService).updateUser(any());
+
+        // CartService Mock 설정 - 각 사용자마다 1개씩 주문
+        given(cartService.getCartItems(anyLong())).willAnswer(invocation -> {
+            Long userId = invocation.getArgument(0);
+            return List.of(new CartItemResponse(userId, userId, productId, orderQuantityPerUser, now, now));
+        });
+        doNothing().when(cartService).clearCart(anyLong());
+
+        // OrderService Mock 설정
+        given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
+                .willReturn(mock(Order.class));
+
+        // UserCouponService Mock 설정 (쿠폰 미사용)
+        // 쿠폰을 사용하지 않으므로 모킹 불필요
+
+        // Lock 테스트 준비
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        // when: 100개 스레드가 동시에 주문 시도
+        for (int i = 0; i < threadCount; i++) {
+            long userId = (long) i + 1;
+
+            executorService.submit(() -> {
+                try {
+                    createOrderUseCase.createOrder(userId, null); // 쿠폰 미사용
+                    successCount.incrementAndGet();
+                } catch (ProductException e) {
+                    // 재고 부족 예외는 예상된 동작
+                    if (e.getMessage().contains("재고가 부족합니다")) {
+                        failCount.incrementAndGet();
+                    } else {
+                        throw e; // 다른 예외는 재발생
+                    }
+                } catch (Exception e) {
+                    // 예상치 못한 예외
+                    e.printStackTrace();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await(30, TimeUnit.SECONDS);
+        executorService.shutdown();
+
+        // then: 성공한 주문 수와 재고가 일치해야 함
+        assertThat(successCount.get()).isEqualTo(productStock);
+        assertThat(failCount.get()).isEqualTo(threadCount - productStock);
+
+        // 최종 재고는 0이어야 함
+        assertThat(sharedProduct.getQuantity()).isEqualTo(0);
+
+        // 주문 생성은 정확히 재고만큼만 호출되어야 함
+        verify(orderService, times(productStock)).createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any());
+
+        // 장바구니 clear는 성공한 주문 수만큼 호출되어야 함
+        verify(cartService, times(productStock)).clearCart(anyLong());
     }
 }
