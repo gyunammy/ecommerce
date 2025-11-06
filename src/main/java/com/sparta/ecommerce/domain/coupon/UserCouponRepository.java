@@ -2,6 +2,7 @@ package com.sparta.ecommerce.domain.coupon;
 
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface UserCouponRepository {
@@ -13,4 +14,6 @@ public interface UserCouponRepository {
     UserCoupon issueUserCoupon(Long userId, Long couponId);
 
     void update(UserCoupon userCoupon);
+
+    List<UserCoupon> findAll();
 }

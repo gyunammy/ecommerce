@@ -9,4 +9,5 @@ public interface ProductRepository {
     Optional<Product> findById(Long productId);
     void update(Product product);
     List<Product> findTopProducts(ProductSortType sortType, int limit);
+    Product save(Product product);
 }
