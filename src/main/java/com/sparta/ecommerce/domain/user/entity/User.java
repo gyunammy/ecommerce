@@ -30,4 +30,13 @@ public class User {
         validateSufficientPoint(amount);
         this.point -= amount;
     }
+
+    /**
+     * 포인트 복구 (주문 실패 시 롤백용)
+     *
+     * @param amount 복구할 포인트
+     */
+    public void restorePoint(int amount) {
+        this.point += amount;
+    }
 }

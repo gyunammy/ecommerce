@@ -26,4 +26,13 @@ public class UserCoupon {
         this.used = true;
         this.usedAt = LocalDateTime.now();
     }
+
+    /**
+     * 쿠폰 사용 취소 (주문 실패 시 롤백용)
+     * 쿠폰을 미사용 상태로 되돌리고 사용 시간을 제거합니다.
+     */
+    public void cancelUsage() {
+        this.used = false;
+        this.usedAt = null;
+    }
 }

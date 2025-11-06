@@ -80,6 +80,15 @@ public class UserCouponService {
     }
 
     /**
+     * 쿠폰 정보 업데이트
+     *
+     * @param userCoupon 업데이트할 쿠폰
+     */
+    public void updateUserCoupon(UserCoupon userCoupon) {
+        userCouponRepository.update(userCoupon);
+    }
+
+    /**
      * 유효성 검증된 쿠폰 정보를 담는 DTO
      */
     public record ValidatedCoupon(

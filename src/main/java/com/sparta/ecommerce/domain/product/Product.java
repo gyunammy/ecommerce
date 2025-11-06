@@ -46,6 +46,15 @@ public class Product {
         this.quantity -= decreaseQuantity;
     }
 
+    /**
+     * 재고 복구 (주문 실패 시 롤백용)
+     *
+     * @param restoreQuantity 복구할 수량
+     */
+    public void restoreStock(int restoreQuantity) {
+        this.quantity += restoreQuantity;
+    }
+
     public ProductResponse from() {
         return new ProductResponse(this.productId, this.productName, this.description, this.quantity, this.price, this.viewCount, this.createdAt, this.updateAt);
     }
