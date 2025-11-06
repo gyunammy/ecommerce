@@ -35,6 +35,19 @@ class OrderItemServiceTest {
     // 2L: 마우스
     // 3L: 키보드
 
+    @BeforeEach
+    void setUp() {
+        // Product 데이터 초기화
+        LocalDateTime now = LocalDateTime.now();
+        Product product1 = new Product(1L, "노트북", "고성능 노트북", 10, 1500000, 1500, now, now);
+        Product product2 = new Product(2L, "마우스", "무선 마우스", 50, 30000, 3200, now, now);
+        Product product3 = new Product(3L, "키보드", "기계식 키보드", 30, 120000, 2100, now, now);
+
+        productRepository.update(product1);
+        productRepository.update(product2);
+        productRepository.update(product3);
+    }
+
     @Test
     @DisplayName("상품별 판매량 조회 - 실제 주문 데이터 기반")
     void getSoldCountByProductId() {
