@@ -56,7 +56,7 @@ public class CreateOrderUseCase {
      * @throws com.sparta.ecommerce.domain.coupon.exception.CouponException 쿠폰이 유효하지 않은 경우
      */
 
-    public void createOrder(Long userId, Long userCouponId) {
+    public synchronized void createOrder(Long userId, Long userCouponId) {
         // === 1단계: 모든 검증 ===
 
         // 1-1. 사용자 유효성 검증
