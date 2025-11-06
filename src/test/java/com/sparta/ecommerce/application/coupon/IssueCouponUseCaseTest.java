@@ -3,6 +3,7 @@ package com.sparta.ecommerce.application.coupon;
 import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
+import com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode;
 import com.sparta.ecommerce.domain.coupon.exception.CouponException;
 import com.sparta.ecommerce.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
@@ -13,9 +14,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
@@ -201,5 +208,76 @@ class IssueCouponUseCaseTest {
         // Mockito로는 내부 상태 변경을 직접 검증하기 어려우므로
         // saveCoupon이 호출되었는지만 확인
         verify(couponService).saveCoupon(coupon);
+    }
+
+    @Test
+    @DisplayName("동시에 여러 스레드가 쿠폰 발급을 요청해도 Lock으로 동기화된다")
+    void concurrentIssueCoupon() throws InterruptedException {
+        // given
+        Long couponId = 1L;
+        int threadCount = 200;
+        int couponStock = 50; // 발급 가능한 최대 수량
+
+        AtomicInteger issuedCount = new AtomicInteger(0);
+
+        // 쿠폰 Mock
+        Coupon coupon = mock(Coupon.class);
+        when(couponService.getCoupon(couponId)).thenReturn(coupon);
+
+        // validateIssuable(): 재고가 남아 있으면 OK, 아니면 예외
+        doAnswer(invocation -> {
+            if (issuedCount.get() >= couponStock) {
+                throw new CouponException(CouponErrorCode.COUPON_OUT_OF_STOCK);
+            }
+            return null;
+        }).when(coupon).validateIssuable();
+
+        // increaseIssuedQuantity(): 성공할 때만 증가
+        doAnswer(invocation -> {
+            issuedCount.incrementAndGet();
+            return null;
+        }).when(coupon).increaseIssuedQuantity();
+
+        // User 모킹
+        when(userService.getUserById(anyLong())).thenReturn(mock(User.class));
+
+        // userCouponService.hasCoupon → 모두 미보유 상태
+        when(userCouponService.hasCoupon(anyLong(), eq(couponId))).thenReturn(false);
+
+        // userCoupon 발급 mock
+        when(userCouponService.issueCoupon(anyLong(), eq(couponId))).thenReturn(mock(UserCoupon.class));
+
+        // Lock 테스트 준비
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        // when: 10개 스레드가 동시에 쿠폰 발급 요청
+        for (int i = 0; i < threadCount; i++) {
+            long userId = (long) i + 1;
+
+            executorService.submit(() -> {
+                try {
+                    try {
+                        issueCouponUseCase.issueCoupon(userId, couponId);
+                    } catch (CouponException ignored) {
+                        // 재고 부족 예외는 무시
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await(50, TimeUnit.SECONDS);
+        executorService.shutdown();
+
+        // then: 발급된 쿠폰은 정확히 50개여야 한다
+        assertEquals(couponStock, issuedCount.get());
+
+        // then: 사용자에게 쿠폰 발급 호출된 횟수 검증
+        verify(userCouponService, times(couponStock)).issueCoupon(anyLong(), eq(couponId));
+
+        // 쿠폰 저장 호출 50번
+        verify(couponService, times(couponStock)).saveCoupon(any());
     }
 }
