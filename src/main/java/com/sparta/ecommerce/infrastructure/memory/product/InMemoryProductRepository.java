@@ -3,32 +3,21 @@ package com.sparta.ecommerce.infrastructure.memory.product;
 import com.sparta.ecommerce.domain.product.Product;
 import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
-import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Repository
 public class InMemoryProductRepository implements ProductRepository {
 
-    private final Map<Long, Product> table = new LinkedHashMap<>();
-    private long cursor = 1;
-
-    @PostConstruct
-    public void init() {
-        LocalDateTime now = LocalDateTime.now();
-        table.put(cursor, new Product(cursor++, "노트북", "고성능 노트북", 10, 1500000, 1500, now, now));
-        table.put(cursor, new Product(cursor++, "마우스", "무선 마우스",   50, 30000, 3200, now, now));
-        table.put(cursor, new Product(cursor++, "키보드", "기계식 키보드", 30, 120000, 2100, now, now));
-    }
+    private final Map<Long, Product> table = new ConcurrentHashMap<>();
+    private final AtomicLong cursor = new AtomicLong(1);
 
     @Override
     public List<Product> findAll() {
@@ -61,6 +50,29 @@ public class InMemoryProductRepository implements ProductRepository {
                 .sorted(Comparator.comparing(Product::getViewCount).reversed())
                 .limit(limit)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public Product save(Product product) {
+        if (product.getProductId() == null) {
+            // ID가 없으면 자동 생성
+            Long newId = cursor.getAndIncrement();
+            Product newProduct = new Product(
+                    newId,
+                    product.getProductName(),
+                    product.getDescription(),
+                    product.getQuantity(),
+                    product.getPrice(),
+                    product.getViewCount(),
+                    product.getCreatedAt(),
+                    product.getUpdateAt()
+            );
+            table.put(newId, newProduct);
+            return newProduct;
+        } else {
+            table.put(product.getProductId(), product);
+            return product;
+        }
     }
 
 }

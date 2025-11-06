@@ -5,15 +5,18 @@ import com.sparta.ecommerce.domain.coupon.UserCouponRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Repository
 public class InMemoryUserCouponRepository implements UserCouponRepository {
 
-    private final Map<Long, UserCoupon> table = new LinkedHashMap<>();
-    private long cursor = 1;
+    private final Map<Long, UserCoupon> table = new ConcurrentHashMap<>();
+    private final AtomicLong cursor = new AtomicLong(1);
 
     @Override
     public Optional<UserCoupon> findById(Long userCouponId) {
@@ -47,7 +50,7 @@ public class InMemoryUserCouponRepository implements UserCouponRepository {
     @Override
     public UserCoupon issueUserCoupon(Long userId, Long couponId) {
         LocalDateTime now = LocalDateTime.now();
-        Long id = cursor++;
+        Long id = cursor.getAndIncrement();
         UserCoupon userCoupon = new UserCoupon(id, userId, couponId, false, now, null);
         table.put(id, userCoupon);
 
@@ -57,5 +60,10 @@ public class InMemoryUserCouponRepository implements UserCouponRepository {
     @Override
     public void update(UserCoupon userCoupon) {
         table.put(userCoupon.getUserCouponId(), userCoupon);
+    }
+
+    @Override
+    public List<UserCoupon> findAll() {
+        return new ArrayList<>(table.values());
     }
 }
