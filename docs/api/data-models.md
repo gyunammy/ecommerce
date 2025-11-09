@@ -61,6 +61,7 @@ erDiagram
         int      issued_quantity "발급 개수"
         int      used_quantity   "사용 개수"
         datetime created_at      "등록일시"
+        datetime expires_at      "만료일시"
     }
 
     %% 사용자 쿠폰 테이블
@@ -90,6 +91,7 @@ erDiagram
         varchar  description   "상품 설명"
         int      quantity      "재고 수량"
         int      price         "가격"
+        int      views         "조회수"
         datetime created_at    "등록일시"
         datetime updated_at    "수정일시"
     }
