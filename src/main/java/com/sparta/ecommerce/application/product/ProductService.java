@@ -1,7 +1,7 @@
 package com.sparta.ecommerce.application.product;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
@@ -69,7 +69,7 @@ public class ProductService {
      * @param product 업데이트할 상품
      */
     public void updateProduct(Product product) {
-        productRepository.update(product);
+        productRepository.save(product);
     }
 
     /**

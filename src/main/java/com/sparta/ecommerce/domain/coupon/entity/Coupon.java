@@ -3,16 +3,23 @@ package com.sparta.ecommerce.domain.coupon.entity;
 import com.sparta.ecommerce.domain.coupon.dto.CouponResponse;
 import com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode;
 import com.sparta.ecommerce.domain.coupon.exception.CouponException;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+@Entity
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor
 public class Coupon {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long          couponId;       // 쿠폰_ID
     private String        couponName;     // 쿠폰_명
     private String        discountType;   // 할인타입(비율/금액)

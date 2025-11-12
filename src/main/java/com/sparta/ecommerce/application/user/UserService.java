@@ -20,6 +20,6 @@ public class UserService {
     }
 
     public void updateUser(User user) {
-        userRepository.update(user);
+        userRepository.save(user);
     }
 }

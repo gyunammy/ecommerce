@@ -1,8 +1,9 @@
 package com.sparta.ecommerce.infrastructure.memory.product;
 
-import com.sparta.ecommerce.domain.product.Product;
 import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
+import com.sparta.ecommerce.domain.product.entity.Product;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+//@Primary
 @Repository
 public class InMemoryProductRepository implements ProductRepository {
 
@@ -25,21 +27,20 @@ public class InMemoryProductRepository implements ProductRepository {
     }
 
     @Override
-    public List<Product> findAllById(List<Long> productIds) {
-        return productIds.stream()
-                .map(table::get)
-                .filter(product -> product != null)
-                .toList();
+    public List<Product> findAllById(Iterable<Long> productIds) {
+        List<Product> result = new ArrayList<>();
+        for (Long productId : productIds) {
+            Product product = table.get(productId);
+            if (product != null) {
+                result.add(product);
+            }
+        }
+        return result;
     }
 
     @Override
     public java.util.Optional<Product> findById(Long productId) {
         return java.util.Optional.ofNullable(table.get(productId));
-    }
-
-    @Override
-    public void update(Product product) {
-        table.put(product.getProductId(), product);
     }
 
     @Override

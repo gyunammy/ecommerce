@@ -5,7 +5,7 @@ import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

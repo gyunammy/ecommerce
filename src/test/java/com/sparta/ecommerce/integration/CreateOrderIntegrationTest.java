@@ -15,8 +15,8 @@ import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
-import com.sparta.ecommerce.domain.product.Product;
 import com.sparta.ecommerce.domain.product.ProductRepository;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import com.sparta.ecommerce.domain.user.UserRepository;
 import com.sparta.ecommerce.domain.user.entity.User;
@@ -26,6 +26,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
@@ -40,13 +45,29 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 주문 생성 통합 테스트
  *
  * Controller → UseCase → Service → Repository 전체 레이어를 통합하여 테스트
- * 실제 InMemory Repository를 사용하여 동시성 제어 검증
+ * TestContainers를 사용하여 실제 MySQL 환경에서 동시성 제어 검증
  *
  * 참고: 각 테스트는 독립적으로 실행되며, BeforeEach에서 Repository를 초기화하지 않으므로
  * 테스트 간에 데이터가 공유될 수 있습니다. 이는 실제 운영 환경을 시뮬레이션하기 위함입니다.
  */
 @SpringBootTest
+@Testcontainers
+@org.springframework.transaction.annotation.Transactional
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class CreateOrderIntegrationTest {
+
+    @Container
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("testdb")
+            .withUsername("test")
+            .withPassword("test");
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysql::getJdbcUrl);
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
 
     @Autowired
     private CreateOrderUseCase createOrderUseCase;
@@ -73,16 +94,7 @@ class CreateOrderIntegrationTest {
     private CartService cartService;
 
     @Autowired
-    private UserService userService;
-
-    @Autowired
-    private ProductService productService;
-
-    @Autowired
-    private CouponService couponService;
-
-    @Autowired
-    private UserCouponService userCouponService;
+    private jakarta.persistence.EntityManager entityManager;
 
     private Long productId;
     private static final int PRODUCT_STOCK = 50;
@@ -90,6 +102,19 @@ class CreateOrderIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        // 기존 데이터 삭제 (외래키 순서 고려)
+        try {
+            entityManager.createQuery("DELETE FROM OrderItem").executeUpdate();
+            entityManager.createQuery("DELETE FROM Order").executeUpdate();
+            entityManager.createQuery("DELETE FROM CartItem").executeUpdate();
+            entityManager.createQuery("DELETE FROM UserCoupon").executeUpdate();
+            entityManager.createQuery("DELETE FROM Coupon").executeUpdate();
+            entityManager.createQuery("DELETE FROM Product").executeUpdate();
+            entityManager.createQuery("DELETE FROM User").executeUpdate();
+        } catch (Exception e) {
+            // 첫 실행 시 데이터가 없을 수 있음
+        }
+
         // 테스트용 상품 생성 (재고 50개)
         LocalDateTime now = LocalDateTime.now();
         Product product = new Product(
@@ -118,6 +143,7 @@ class CreateOrderIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 100명이 동시에 주문하면 재고 50개만 성공")
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void createOrder_concurrency_integration() throws InterruptedException {
         // given
         int threadCount = 100;
@@ -194,15 +220,15 @@ class CreateOrderIntegrationTest {
     @Test
     @DisplayName("통합 테스트 - 포인트 부족 시 주문 실패")
     void createOrder_insufficientPoint_shouldFail() {
-        // given: 포인트가 부족한 사용자 생성
-        LocalDateTime now = LocalDateTime.now();
-        Long userId = 999L;
-        User poorUser = new User(userId, "poorUser", 100, now);  // 100원만 보유
+        // given: 기존 사용자(id=1)의 포인트를 100원으로 변경
+        Long userId = 1L;
+        User user = userRepository.findById(userId).orElseThrow();
+        User poorUser = new User(userId, user.getName(), 100, user.getCreatedAt());  // 100원만 보유
         userRepository.save(poorUser);
 
-        // 장바구니에 10,000원짜리 상품 추가
-        CartItem cartItem = new CartItem(999L, userId, productId, 1, now, now);
-        cartRepository.save(cartItem);
+        // 영속성 컨텍스트를 DB에 반영
+        entityManager.flush();
+        entityManager.clear();
 
         // when & then: 주문 시도 시 예외 발생
         try {
@@ -237,7 +263,12 @@ class CreateOrderIntegrationTest {
 
         // 사용자에게 쿠폰 발급
         Long userId = 1L;
-        UserCoupon userCoupon = userCouponRepository.issueUserCoupon(userId, savedCoupon.getCouponId());
+        UserCoupon newUserCoupon = new UserCoupon();
+        newUserCoupon.setUserId(userId);
+        newUserCoupon.setCouponId(savedCoupon.getCouponId());
+        newUserCoupon.setUsed(false);
+        newUserCoupon.setIssuedAt(LocalDateTime.now());
+        UserCoupon userCoupon = userCouponRepository.save(newUserCoupon);
 
         // 현재 주문 개수 기록
         int initialOrderCount = orderRepository.findAll().size();
@@ -323,6 +354,7 @@ class CreateOrderIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - synchronized로 동시성 제어 확인")
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void createOrder_synchronized_verification() throws InterruptedException {
         // given: 재고 10개, 20명이 주문 시도
         // 별도의 상품 생성 (재고 10개)

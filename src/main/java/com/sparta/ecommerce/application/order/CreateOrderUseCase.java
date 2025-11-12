@@ -8,12 +8,12 @@ import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.cart.exception.CartException;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
-import com.sparta.ecommerce.domain.order.dto.OrderDto;
 import com.sparta.ecommerce.domain.order.entity.Order;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -36,6 +36,7 @@ import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_E
  */
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class CreateOrderUseCase {
 
     private final CartService cartService;

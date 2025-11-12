@@ -2,9 +2,9 @@ package com.sparta.ecommerce.application.product;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
-import com.sparta.ecommerce.domain.product.Product;
 import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -144,7 +144,7 @@ class ProductServiceTest {
         productService.updateProduct(product);
 
         // then
-        verify(productRepository).update(product);
+        verify(productRepository).save(product);
     }
 
     @Test

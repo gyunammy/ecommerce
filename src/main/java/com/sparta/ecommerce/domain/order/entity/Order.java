@@ -1,5 +1,6 @@
 package com.sparta.ecommerce.domain.order.entity;
 
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -7,11 +8,15 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
+@Entity
+@Table(name = "orders")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long          orderId;        // 주문_ID
     private Long          userId;         // 사용자_ID
     private Long          userCouponId;   // 사용자_쿠폰_ID

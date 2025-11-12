@@ -6,6 +6,7 @@ import com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode;
 import com.sparta.ecommerce.domain.coupon.exception.CouponException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;

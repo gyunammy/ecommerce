@@ -5,7 +5,7 @@ import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
