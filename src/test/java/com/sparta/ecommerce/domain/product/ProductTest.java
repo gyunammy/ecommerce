@@ -1,6 +1,7 @@
 package com.sparta.ecommerce.domain.product;
 
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

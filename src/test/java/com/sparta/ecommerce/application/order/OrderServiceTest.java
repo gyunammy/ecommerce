@@ -1,11 +1,11 @@
 package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
-import com.sparta.ecommerce.domain.order.OrderItemRepository;
+import com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +32,7 @@ class OrderServiceTest {
     private OrderRepository orderRepository;
 
     @Mock
-    private OrderItemRepository orderItemRepository;
+    private com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository orderItemRepository;
 
     @InjectMocks
     private OrderService orderService;

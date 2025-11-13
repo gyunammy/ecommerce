@@ -8,12 +8,12 @@ import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.cart.exception.CartException;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
-import com.sparta.ecommerce.domain.order.dto.OrderDto;
 import com.sparta.ecommerce.domain.order.entity.Order;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -28,11 +28,15 @@ import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_E
  *
  * 주문 생성 흐름:
  *   - 사용자 및 장바구니 조회
- *   - 상품 재고 검증
+ *   - 상품 재고 검증 (Pessimistic Lock으로 동시성 제어)
  *   - 주문 금액 계산
  *   - 쿠폰 할인 적용
  *   - 사용자 포인트 검증 및 차감
  *   - 주문 생성 및 재고 차감
+ *
+ * 트랜잭션 및 동시성 제어:
+ *   - @Transactional로 원자성 보장 (예외 발생 시 자동 롤백)
+ *   - Pessimistic Lock으로 재고 동시성 제어 (ProductRepository.findAllById)
  */
 @Service
 @RequiredArgsConstructor
@@ -50,14 +54,18 @@ public class CreateOrderUseCase {
      * 사용자의 장바구니 상품을 기반으로 주문을 생성하고,
      * 재고, 포인트, 쿠폰 유효성을 검증한 후 주문을 확정합니다.
      *
+     * Pessimistic Lock을 통해 상품 재고에 대한 동시성을 제어하며,
+     * 트랜잭션 내에서 모든 작업이 원자적으로 실행됩니다.
+     * 예외 발생 시 Spring의 트랜잭션 관리에 의해 자동으로 롤백됩니다.
+     *
      * @param userId 사용자 ID
      * @param userCouponId 쿠폰 ID
      * @throws com.sparta.ecommerce.domain.user.exception.UserException 사용자를 찾을 수 없거나 포인트가 부족한 경우
      * @throws com.sparta.ecommerce.domain.product.exception.ProductException 상품을 찾을 수 없거나 재고가 부족한 경우
      * @throws com.sparta.ecommerce.domain.coupon.exception.CouponException 쿠폰이 유효하지 않은 경우
      */
-
-    public synchronized void createOrder(Long userId, Long userCouponId) {
+    @Transactional
+    public void createOrder(Long userId, Long userCouponId) {
         // === 1단계: 모든 검증 ===
 
         // 1-1. 사용자 유효성 검증
@@ -69,7 +77,7 @@ public class CreateOrderUseCase {
         // 1-3. 빈 장바구니 체크
         if (findCartItems.isEmpty()) throw new CartException(CART_IS_EMPTY);
 
-        // 1-4. 상품 정보 조회 및 Map 변환 (상품 존재 여부 검증 포함)
+        // 1-4. 상품 정보 조회 및 Map 변환 (Pessimistic Lock 적용, 상품 존재 여부 검증 포함)
         Map<Long, Product> productMap = productService.getProductMap(findCartItems);
 
         // 1-5. 재고 검증 (도메인 모델 사용)
@@ -87,41 +95,35 @@ public class CreateOrderUseCase {
         // 1-9. 포인트 검증 (도메인 모델 사용)
         user.validateSufficientPoint(finalAmount);
 
-        // === 2단계: 상태 변경 (주문 생성 전에) ===
-        // try-catch로 롤백 처리
-        try {
-            // 2-1. 쿠폰 사용 처리
-            if (couponResult.userCoupon() != null) {
-                userCouponService.markAsUsed(couponResult.userCoupon());
-            }
+        // === 2단계: 상태 변경 ===
 
-            // 2-2. 포인트 차감
-            user.deductPoint(finalAmount);
-            userService.updateUser(user);
-
-            // 2-3. 재고 차감
-            decreaseStock(findCartItems, productMap);
-
-            // === 3단계: 주문 생성 (모든 상태 변경 후 마지막에) ===
-            Order order = orderService.createOrder(
-                    userId,
-                    userCouponId,
-                    totalAmount,
-                    couponResult.discountAmount(),
-                    finalAmount,  // 실제 사용한 포인트
-                    findCartItems,
-                    productMap
-            );
-
-            // === 4단계: 장바구니 비우기 ===
-            cartService.clearCart(userId);
-
-            // TODO: 외부로 주문완료 데이터 전송
-        } catch (Exception e) {
-            // 롤백: 모든 상태 변경을 되돌림
-            rollbackOrderCreation(user, couponResult.userCoupon(), findCartItems, productMap, finalAmount);
-            throw e; // 예외를 다시 던져서 트랜잭션 실패를 알림
+        // 2-1. 쿠폰 사용 처리
+        if (couponResult.userCoupon() != null) {
+            userCouponService.markAsUsed(couponResult.userCoupon());
         }
+
+        // 2-2. 포인트 차감
+        user.deductPoint(finalAmount);
+        userService.updateUser(user);
+
+        // 2-3. 재고 차감
+        decreaseStock(findCartItems, productMap);
+
+        // === 3단계: 주문 생성 ===
+        orderService.createOrder(
+                userId,
+                userCouponId,
+                totalAmount,
+                couponResult.discountAmount(),
+                finalAmount,  // 실제 사용한 포인트
+                findCartItems,
+                productMap
+        );
+
+        // === 4단계: 장바구니 비우기 ===
+        cartService.clearCart(userId);
+
+        // TODO: 외부로 주문완료 데이터 전송
     }
 
     /**
@@ -150,41 +152,6 @@ public class CreateOrderUseCase {
         for (CartItemResponse cartItem : cartItems) {
             Product product = productMap.get(cartItem.productId());
             product.decreaseStock(cartItem.quantity());
-            productService.updateProduct(product);
-        }
-    }
-
-    /**
-     * 주문 생성 실패 시 롤백 처리
-     * 쿠폰 사용, 포인트 차감, 재고 차감을 모두 되돌립니다.
-     *
-     * @param user 사용자
-     * @param userCoupon 사용된 쿠폰 (null 가능)
-     * @param cartItems 장바구니 상품 목록
-     * @param productMap 상품 정보 Map
-     * @param deductedPoint 차감된 포인트
-     */
-    private void rollbackOrderCreation(
-            User user,
-            UserCoupon userCoupon,
-            List<CartItemResponse> cartItems,
-            Map<Long, Product> productMap,
-            int deductedPoint
-    ) {
-        // 1. 쿠폰 사용 취소
-        if (userCoupon != null) {
-            userCoupon.cancelUsage();
-            userCouponService.updateUserCoupon(userCoupon);
-        }
-
-        // 2. 포인트 복구
-        user.restorePoint(deductedPoint);
-        userService.updateUser(user);
-
-        // 3. 재고 복구
-        for (CartItemResponse cartItem : cartItems) {
-            Product product = productMap.get(cartItem.productId());
-            product.restoreStock(cartItem.quantity());
             productService.updateProduct(product);
         }
     }

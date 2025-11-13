@@ -37,7 +37,12 @@ public class UserCouponService {
      * @return 발급된 사용자 쿠폰
      */
     public UserCoupon issueCoupon(Long userId, Long couponId) {
-        return userCouponRepository.issueUserCoupon(userId, couponId);
+        UserCoupon userCoupon = new UserCoupon();
+        userCoupon.setUserId(userId);
+        userCoupon.setCouponId(couponId);
+        userCoupon.setUsed(false);
+        userCoupon.setIssuedAt(LocalDateTime.now());
+        return userCouponRepository.save(userCoupon);
     }
 
     /**
@@ -76,7 +81,7 @@ public class UserCouponService {
      */
     public void markAsUsed(UserCoupon userCoupon) {
         userCoupon.markAsUsed();
-        userCouponRepository.update(userCoupon);
+        userCouponRepository.save(userCoupon);
     }
 
     /**
@@ -85,7 +90,7 @@ public class UserCouponService {
      * @param userCoupon 업데이트할 쿠폰
      */
     public void updateUserCoupon(UserCoupon userCoupon) {
-        userCouponRepository.update(userCoupon);
+        userCouponRepository.save(userCoupon);
     }
 
     /**

@@ -2,6 +2,7 @@ package com.sparta.ecommerce.infrastructure.memory.coupon;
 
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 import com.sparta.ecommerce.domain.coupon.UserCouponRepository;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
+//@Primary
 @Repository
 public class InMemoryUserCouponRepository implements UserCouponRepository {
 
@@ -41,25 +43,26 @@ public class InMemoryUserCouponRepository implements UserCouponRepository {
         return Optional.empty();
     }
 
-    /**
-     * 쿠폰 발급
-     *
-     * @param userId
-     * @param couponId
-     */
     @Override
-    public UserCoupon issueUserCoupon(Long userId, Long couponId) {
-        LocalDateTime now = LocalDateTime.now();
-        Long id = cursor.getAndIncrement();
-        UserCoupon userCoupon = new UserCoupon(id, userId, couponId, false, now, null);
-        table.put(id, userCoupon);
+    public UserCoupon save(UserCoupon userCoupon) {
+        // ID가 없으면 새로 생성 (insert)
+        if (userCoupon.getUserCouponId() == null) {
+            Long id = cursor.getAndIncrement();
+            UserCoupon newUserCoupon = new UserCoupon(
+                    id,
+                    userCoupon.getUserId(),
+                    userCoupon.getCouponId(),
+                    userCoupon.isUsed(),
+                    userCoupon.getIssuedAt(),
+                    userCoupon.getUsedAt()
+            );
+            table.put(id, newUserCoupon);
+            return newUserCoupon;
+        }
 
-        return userCoupon;
-    }
-
-    @Override
-    public void update(UserCoupon userCoupon) {
+        // ID가 있으면 업데이트 (update)
         table.put(userCoupon.getUserCouponId(), userCoupon);
+        return userCoupon;
     }
 
     @Override
