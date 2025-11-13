@@ -38,7 +38,6 @@ public class InMemoryProductRepository implements ProductRepository {
         return result;
     }
 
-    @Override
     public java.util.Optional<Product> findById(Long productId) {
         return java.util.Optional.ofNullable(table.get(productId));
     }
@@ -53,7 +52,6 @@ public class InMemoryProductRepository implements ProductRepository {
                 .collect(Collectors.toList());
     }
 
-    @Override
     public Product save(Product product) {
         if (product.getProductId() == null) {
             // ID가 없으면 자동 생성

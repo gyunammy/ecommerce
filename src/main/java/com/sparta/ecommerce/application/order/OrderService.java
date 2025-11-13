@@ -1,11 +1,11 @@
 package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
-import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
 import com.sparta.ecommerce.domain.product.entity.Product;
+import com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,7 +19,7 @@ import java.util.Map;
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository;
+    private final JpaOrderItemRepository orderItemRepository;
 
     /**
      * 주문 생성

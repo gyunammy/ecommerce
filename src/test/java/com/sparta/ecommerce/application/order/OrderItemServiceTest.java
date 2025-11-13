@@ -1,10 +1,10 @@
 package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
-import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
-import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
+import com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository;
+import com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,10 +48,10 @@ class OrderItemServiceTest {
     }
 
     @Autowired
-    private OrderItemRepository orderItemRepository;
+    private JpaOrderItemRepository orderItemRepository;
 
     @Autowired
-    private ProductRepository productRepository;
+    private JpaProductRepository productRepository;
 
     @Autowired
     private OrderItemService orderItemService;

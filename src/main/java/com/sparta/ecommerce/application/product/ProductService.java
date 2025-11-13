@@ -2,10 +2,10 @@ package com.sparta.ecommerce.application.product;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.product.entity.Product;
-import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
+import com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,7 +19,7 @@ import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.PRO
 @RequiredArgsConstructor
 public class ProductService {
 
-    private final ProductRepository productRepository;
+    private final JpaProductRepository productRepository;
 
     /**
      * 모든 상품 조회

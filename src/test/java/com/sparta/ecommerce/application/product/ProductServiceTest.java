@@ -2,7 +2,7 @@ package com.sparta.ecommerce.application.product;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
-import com.sparta.ecommerce.domain.product.ProductRepository;
+import com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.verify;
 class ProductServiceTest {
 
     @Mock
-    private ProductRepository productRepository;
+    private com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository productRepository;
 
     @InjectMocks
     private ProductService productService;

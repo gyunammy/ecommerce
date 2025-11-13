@@ -1,6 +1,5 @@
 package com.sparta.ecommerce.infrastructure.jpa.product;
 
-import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import jakarta.persistence.LockModeType;
@@ -17,7 +16,7 @@ import java.util.List;
 
 @Primary
 @Repository
-public interface JpaProductRepository extends JpaRepository<Product, Long>, ProductRepository {
+public interface JpaProductRepository extends JpaRepository<Product, Long> {
 
     /**
      * JPA 구현체에서만 동시성 제어를 위해 비관적 락 사용
@@ -28,7 +27,9 @@ public interface JpaProductRepository extends JpaRepository<Product, Long>, Prod
     @Query("SELECT p FROM Product p WHERE p.productId IN :productIds")
     List<Product> findAllById(@Param("productIds") Iterable<Long> productIds);
 
-    @Override
+    /**
+     * 인기 상품 조회 (조회수 또는 최신순)
+     */
     default List<Product> findTopProducts(ProductSortType sortType, int limit) {
         Sort sort;
         if (sortType == ProductSortType.VIEW_COUNT) {

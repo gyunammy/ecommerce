@@ -1,23 +1,23 @@
 package com.sparta.ecommerce.integration;
 
-import com.sparta.ecommerce.application.coupon.CouponService;
 import com.sparta.ecommerce.application.coupon.IssueCouponUseCase;
 import com.sparta.ecommerce.application.coupon.UserCouponService;
-import com.sparta.ecommerce.application.user.UserService;
-import com.sparta.ecommerce.domain.coupon.CouponRepository;
 import com.sparta.ecommerce.domain.coupon.UserCouponRepository;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 import com.sparta.ecommerce.domain.coupon.exception.CouponException;
 import com.sparta.ecommerce.domain.user.UserRepository;
 import com.sparta.ecommerce.domain.user.entity.User;
+import com.sparta.ecommerce.infrastructure.jpa.coupon.JpaCouponRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -40,8 +40,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @Testcontainers
-@org.springframework.transaction.annotation.Transactional
-@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class CouponIssueIntegrationTest {
 
     @Container
@@ -61,7 +59,7 @@ class CouponIssueIntegrationTest {
     private IssueCouponUseCase issueCouponUseCase;
 
     @Autowired
-    private CouponRepository couponRepository;
+    private JpaCouponRepository couponRepository;
 
     @Autowired
     private UserCouponRepository userCouponRepository;
@@ -80,6 +78,8 @@ class CouponIssueIntegrationTest {
     private static final int THREAD_COUNT = 200;
 
     @BeforeEach
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.test.annotation.Commit
     void setUp() {
         // 기존 데이터 삭제 (외래키 순서 고려)
         try {
@@ -176,6 +176,7 @@ class CouponIssueIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 동일한 사용자가 같은 쿠폰을 두 번 발급받을 수 없음")
+    @org.springframework.transaction.annotation.Transactional
     void issueCoupon_duplicateIssue_shouldFail() {
         // given
         Long userId = 1L;
@@ -237,6 +238,7 @@ class CouponIssueIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 만료된 쿠폰은 발급 불가")
+    @org.springframework.transaction.annotation.Transactional
     void issueCoupon_expiredCoupon_shouldFail() {
         // given: 만료된 쿠폰 생성
         LocalDateTime now = LocalDateTime.now();
@@ -265,6 +267,7 @@ class CouponIssueIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 전체 발급 플로우 검증 (사용자 조회 → 쿠폰 검증 → 발급)")
+    @org.springframework.transaction.annotation.Transactional
     void issueCoupon_fullFlow_verification() {
         // given
         Long userId = 1L;

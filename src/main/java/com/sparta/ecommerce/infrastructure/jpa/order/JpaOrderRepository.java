@@ -9,6 +9,6 @@ import org.springframework.stereotype.Repository;
 
 @Primary
 @Repository
-public interface JpaOrderRepository extends JpaRepository<Order, Long>, OrderRepository {
+public interface JpaOrderRepository extends JpaRepository<Order, Long>{
 
 }

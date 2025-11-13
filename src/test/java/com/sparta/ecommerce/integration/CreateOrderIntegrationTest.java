@@ -15,9 +15,9 @@ import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
-import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
+import com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository;
 import com.sparta.ecommerce.domain.user.UserRepository;
 import com.sparta.ecommerce.domain.user.entity.User;
 import com.sparta.ecommerce.domain.user.exception.UserException;
@@ -76,7 +76,7 @@ class CreateOrderIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
-    private ProductRepository productRepository;
+    private JpaProductRepository productRepository;
 
     @Autowired
     private CartRepository cartRepository;

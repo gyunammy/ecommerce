@@ -27,7 +27,6 @@ public class InMemoryOrderItemRepository implements OrderItemRepository {
         this.productRepository = productRepository;
     }
 
-    @Override
     public OrderItem save(OrderItem orderItem) {
         if (orderItem.getOrderItemId() == null) {
             orderItem.setOrderItemId(cursor++);
@@ -36,7 +35,6 @@ public class InMemoryOrderItemRepository implements OrderItemRepository {
         return orderItem;
     }
 
-    @Override
     public List<OrderItem> saveAll(List<OrderItem> orderItems) {
         List<OrderItem> savedItems = new ArrayList<>();
         for (OrderItem orderItem : orderItems) {

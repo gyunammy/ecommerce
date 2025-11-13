@@ -19,13 +19,6 @@ public class IssueCouponUseCase {
     private final CouponService couponService;
     private final UserCouponService userCouponService;
 
-    // 쿠폰Id Lock 관리
-    private final ConcurrentHashMap<Long, Lock> couponLocks = new ConcurrentHashMap<>();
-
-    private Lock getCouponLock(long couponId) {
-        return couponLocks.computeIfAbsent(couponId, id -> new ReentrantLock());
-    }
-
     /**
      * 쿠폰 발급
      *
@@ -39,33 +32,28 @@ public class IssueCouponUseCase {
      * @param userId 사용자 ID
      * @param couponId 쿠폰 ID
      */
+    @Transactional
     public void issueCoupon(Long userId, Long couponId) {
-        Lock lock = getCouponLock(couponId);
-        lock.lock();
+        // 1. 사용자 존재 여부 확인
+        userService.getUserById(userId);
 
-        try {
-            // 1. 사용자 존재 여부 확인
-            userService.getUserById(userId);
+        // 2. 쿠폰 조회
+        Coupon coupon = couponService.getCouponForUpdate(couponId);
 
-            // 2. 쿠폰 조회
-            Coupon coupon = couponService.getCoupon(couponId);
+        // 3. 쿠폰 발급 가능 여부 검증 (만료일 + 재고)
+        coupon.validateIssuable();
 
-            // 3. 쿠폰 발급 가능 여부 검증 (만료일 + 재고)
-            coupon.validateIssuable();
-
-            // 4. 중복 발급 검증
-            if (userCouponService.hasCoupon(userId, couponId)) {
-                throw new CouponException(CouponErrorCode.COUPON_ALREADY_ISSUED);
-            }
-
-            // 5. 쿠폰 발급 수량 증가
-            coupon.increaseIssuedQuantity();
-            couponService.saveCoupon(coupon);
-
-            // 6. 사용자에게 쿠폰 발급
-            userCouponService.issueCoupon(userId, couponId);
-        } finally {
-            lock.unlock();
+        // 4. 중복 발급 검증
+        if (userCouponService.hasCoupon(userId, couponId)) {
+            throw new CouponException(CouponErrorCode.COUPON_ALREADY_ISSUED);
         }
+
+        // 5. 쿠폰 발급 수량 증가
+        coupon.increaseIssuedQuantity();
+
+        couponService.saveCoupon(coupon);
+
+        // 6. 사용자에게 쿠폰 발급
+        userCouponService.issueCoupon(userId, couponId);
     }
 }

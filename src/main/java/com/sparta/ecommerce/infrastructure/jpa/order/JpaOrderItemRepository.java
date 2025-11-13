@@ -1,10 +1,8 @@
 package com.sparta.ecommerce.infrastructure.jpa.order;
 
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
-import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
 import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.Profile;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,17 +15,11 @@ import java.util.stream.Collectors;
 
 @Primary
 @Repository
-public interface JpaOrderItemRepository extends JpaRepository<OrderItem, Long>, OrderItemRepository {
+public interface JpaOrderItemRepository extends JpaRepository<OrderItem, Long> {
 
     @Query("SELECT oi.productId as productId, SUM(oi.quantity) as soldCount FROM OrderItem oi GROUP BY oi.productId")
     List<ProductSoldCount> findSoldCountByProductId();
 
-    @Override
-    default List<OrderItem> saveAll(List<OrderItem> orderItems) {
-        return ((JpaRepository<OrderItem, Long>) this).saveAll(orderItems);
-    }
-
-    @Override
     default Map<Long, Integer> getSoldCountByProductId() {
         return findSoldCountByProductId().stream()
                 .collect(Collectors.toMap(
@@ -54,7 +46,6 @@ public interface JpaOrderItemRepository extends JpaRepository<OrderItem, Long>, 
             """)
     List<ProductWithSoldCount> findTopProductsWithSoldCount(@Param("limit") int limit);
 
-    @Override
     default List<ProductResponse> findTopProductsBySoldCount(int limit) {
         return findTopProductsWithSoldCount(limit).stream()
                 .map(p -> new ProductResponse(
