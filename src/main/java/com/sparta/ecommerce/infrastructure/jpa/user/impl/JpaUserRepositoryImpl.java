@@ -1,7 +1,8 @@
-package com.sparta.ecommerce.infrastructure.jpa.user;
+package com.sparta.ecommerce.infrastructure.jpa.user.impl;
 
 import com.sparta.ecommerce.domain.user.UserRepository;
 import com.sparta.ecommerce.domain.user.entity.User;
+import com.sparta.ecommerce.infrastructure.jpa.user.JpaUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
