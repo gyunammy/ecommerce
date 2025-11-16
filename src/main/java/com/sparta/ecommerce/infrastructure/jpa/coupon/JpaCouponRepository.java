@@ -10,8 +10,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
-@Primary
-@Repository
 public interface JpaCouponRepository extends JpaRepository<Coupon, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -11,7 +11,7 @@ import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
-public class JpaOrderRepositoryImpl implements OrderRepository {
+public class OrderRepositoryAdapter implements OrderRepository {
     private final JpaOrderRepository jpaOrderRepository;
 
     @Override

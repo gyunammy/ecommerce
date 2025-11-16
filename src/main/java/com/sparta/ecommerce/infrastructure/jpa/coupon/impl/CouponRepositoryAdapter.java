@@ -10,7 +10,7 @@ import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
-public class JpaCouponRepositoryImpl implements CouponRepository {
+public class CouponRepositoryAdapter implements CouponRepository {
     private final JpaCouponRepository jpaCouponRepository;
     @Override
     public Optional<Coupon> findById(Long couponId) {

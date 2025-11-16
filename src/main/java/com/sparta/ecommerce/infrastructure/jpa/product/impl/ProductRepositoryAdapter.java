@@ -11,7 +11,7 @@ import java.util.List;
 
 @Repository
 @RequiredArgsConstructor
-public class JpaProductRepositoryImpl implements ProductRepository {
+public class ProductRepositoryAdapter implements ProductRepository {
     private final JpaProductRepository jpaProductRepository;
 
     @Override

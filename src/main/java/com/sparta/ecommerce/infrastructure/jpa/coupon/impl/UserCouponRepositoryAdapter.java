@@ -11,7 +11,7 @@ import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
-public class JpaUserCouponRepositoryImpl implements UserCouponRepository {
+public class UserCouponRepositoryAdapter implements UserCouponRepository {
     private final JpaUserCouponRepository jpaUserCouponRepository;
 
     @Override

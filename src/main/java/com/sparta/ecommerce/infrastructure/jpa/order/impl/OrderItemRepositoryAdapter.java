@@ -12,7 +12,7 @@ import java.util.Map;
 
 @Repository
 @RequiredArgsConstructor
-public class JpaOrderItemRepositoryImpl implements OrderItemRepository {
+public class OrderItemRepositoryAdapter implements OrderItemRepository {
     private final JpaOrderItemRepository jpaOrderItemRepository;
 
     @Override

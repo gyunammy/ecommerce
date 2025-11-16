@@ -10,7 +10,7 @@ import java.util.List;
 
 @Repository
 @RequiredArgsConstructor
-public class JpaCartRepositoryImpl implements CartRepository {
+public class CartRepositoryAdapter implements CartRepository {
     private final JpaCartRepository jpaCartRepository;
 
     @Override

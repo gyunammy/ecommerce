@@ -3,19 +3,15 @@ package com.sparta.ecommerce.infrastructure.jpa.product;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import jakarta.persistence.LockModeType;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-@Primary
-@Repository
 public interface JpaProductRepository extends JpaRepository<Product, Long> {
 
     /**

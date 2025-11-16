@@ -7,8 +7,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
-@Primary
-@Repository
 public interface JpaUserCouponRepository extends JpaRepository<UserCoupon, Long>{
     Optional<UserCoupon> findByUserIdAndCouponId(Long userId, Long couponId);
 }
