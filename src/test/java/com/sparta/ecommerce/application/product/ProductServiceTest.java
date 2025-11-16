@@ -2,7 +2,7 @@ package com.sparta.ecommerce.application.product;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
-import com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository;
+import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
@@ -22,7 +22,6 @@ import java.util.Map;
 import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.PRODUCT_NOT_FOUND;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -30,7 +29,7 @@ import static org.mockito.Mockito.verify;
 class ProductServiceTest {
 
     @Mock
-    private com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository productRepository;
+    private ProductRepository productRepository;
 
     @InjectMocks
     private ProductService productService;
