@@ -8,7 +8,7 @@ import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 import com.sparta.ecommerce.domain.order.entity.Order;
-import com.sparta.ecommerce.domain.product.Product;
+import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import com.sparta.ecommerce.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
@@ -579,19 +579,21 @@ class CreateOrderUseCaseTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("주문 생성 중 예외 발생");
 
-        // 롤백 확인
-        // 1. 쿠폰 사용 취소 확인
-        assertThat(userCoupon.isUsed()).isFalse();
-        assertThat(userCoupon.getUsedAt()).isNull();
-        verify(userCouponService).updateUserCoupon(userCoupon);
+        // Spring의 @Transactional이 자동으로 롤백 처리
+        // 단위 테스트에서는 예외 발생 확인만 수행하고, 실제 롤백은 통합 테스트에서 검증
 
-        // 2. 포인트 복구 확인 (50,000 - 5,000 = 45,000 차감 후 롤백하여 100,000으로 복구)
-        assertThat(user.getPoint()).isEqualTo(100000);
-        verify(userService, times(2)).updateUser(user); // 차감 시 1번, 복구 시 1번
+        // 상태 변경은 수행되었지만 트랜잭션 롤백으로 DB에는 반영되지 않음
+        // 1. 쿠폰 사용 처리가 수행됨 (메모리상)
+        verify(userCouponService).markAsUsed(userCoupon);
 
-        // 3. 재고 복구 확인 (100 - 5 = 95 차감 후 롤백하여 100으로 복구)
-        assertThat(product.getQuantity()).isEqualTo(100);
-        verify(productService, times(2)).updateProduct(product); // 차감 시 1번, 복구 시 1번
+        // 2. 포인트 차감이 수행됨 (메모리상)
+        verify(userService).updateUser(user);
+
+        // 3. 재고 차감이 수행됨 (메모리상)
+        verify(productService).updateProduct(product);
+
+        // 4. 장바구니 클리어는 호출되지 않음 (예외 발생으로 도달하지 못함)
+        verify(cartService, never()).clearCart(userId);
     }
 
     @Test
@@ -623,17 +625,20 @@ class CreateOrderUseCaseTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("시스템 오류");
 
-        // 롤백 확인
-        // 1. 포인트 복구 확인 (60,000원 차감 후 롤백하여 100,000으로 복구)
-        assertThat(user.getPoint()).isEqualTo(100000);
-        verify(userService, times(2)).updateUser(user); // 차감 시 1번, 복구 시 1번
+        // Spring의 @Transactional이 자동으로 롤백 처리
+        // 단위 테스트에서는 예외 발생 확인만 수행하고, 실제 롤백은 통합 테스트에서 검증
 
-        // 2. 재고 복구 확인 (50 - 3 = 47 차감 후 롤백하여 50으로 복구)
-        assertThat(product.getQuantity()).isEqualTo(50);
-        verify(productService, times(2)).updateProduct(product); // 차감 시 1번, 복구 시 1번
+        // 1. 포인트 차감이 수행됨 (메모리상)
+        verify(userService).updateUser(user);
+
+        // 2. 재고 차감이 수행됨 (메모리상)
+        verify(productService).updateProduct(product);
 
         // 3. 쿠폰 관련 메서드는 호출되지 않아야 함
-        verify(userCouponService, never()).updateUserCoupon(any());
+        verify(userCouponService, never()).markAsUsed(any());
+
+        // 4. 장바구니 클리어는 호출되지 않음
+        verify(cartService, never()).clearCart(userId);
     }
 
     @Test
@@ -672,16 +677,16 @@ class CreateOrderUseCaseTest {
         assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, null))
                 .isInstanceOf(RuntimeException.class);
 
-        // 롤백 확인
-        // 1. 포인트 복구 (50,000원 차감 후 롤백)
-        assertThat(user.getPoint()).isEqualTo(200000);
+        // Spring의 @Transactional이 자동으로 롤백 처리
+        // 단위 테스트에서는 예외 발생 확인만 수행하고, 실제 롤백은 통합 테스트에서 검증
 
-        // 2. 모든 상품의 재고 복구
-        assertThat(product1.getQuantity()).isEqualTo(100); // 98 -> 100으로 복구
-        assertThat(product2.getQuantity()).isEqualTo(200); // 197 -> 200으로 복구
-        assertThat(product3.getQuantity()).isEqualTo(150); // 149 -> 150으로 복구
+        // 1. 포인트 차감이 수행됨 (메모리상)
+        verify(userService).updateUser(user);
 
-        // 3. 각 상품의 updateProduct 호출 확인 (차감 + 복구)
-        verify(productService, times(6)).updateProduct(any(Product.class)); // 3개 상품 * 2 = 6
+        // 2. 각 상품의 재고 차감이 수행됨 (메모리상)
+        verify(productService, times(3)).updateProduct(any(Product.class)); // 3개 상품 차감
+
+        // 3. 장바구니 클리어는 호출되지 않음
+        verify(cartService, never()).clearCart(userId);
     }
 }

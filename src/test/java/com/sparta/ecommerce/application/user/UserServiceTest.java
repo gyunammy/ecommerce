@@ -1,6 +1,5 @@
 package com.sparta.ecommerce.application.user;
 
-import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.domain.user.UserRepository;
 import com.sparta.ecommerce.domain.user.entity.User;
 import com.sparta.ecommerce.domain.user.exception.UserException;
@@ -15,7 +14,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -62,6 +61,6 @@ class UserServiceTest {
         userService.updateUser(user);
 
         // then
-        verify(userRepository).update(user);
+        verify(userRepository).save(user);
     }
 }

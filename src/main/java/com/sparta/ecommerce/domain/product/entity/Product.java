@@ -1,7 +1,11 @@
-package com.sparta.ecommerce.domain.product;
+package com.sparta.ecommerce.domain.product.entity;
 
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,10 +14,13 @@ import java.time.LocalDateTime;
 
 import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.INSUFFICIENT_STOCK;
 
+@Entity
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
 public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long          productId;   // 상품_ID
     private String        productName; // 상품_명
     private String        description; // 상품_설명

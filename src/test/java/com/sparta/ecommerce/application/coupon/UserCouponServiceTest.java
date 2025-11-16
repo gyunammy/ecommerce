@@ -74,14 +74,14 @@ class UserCouponServiceTest {
         Long userId = 1L;
         Long couponId = 1L;
         UserCoupon expectedCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
-        given(userCouponRepository.issueUserCoupon(userId, couponId)).willReturn(expectedCoupon);
+        given(userCouponRepository.save(any(UserCoupon.class))).willReturn(expectedCoupon);
 
         // when
         UserCoupon result = userCouponService.issueCoupon(userId, couponId);
 
         // then
         assertThat(result).isEqualTo(expectedCoupon);
-        verify(userCouponRepository).issueUserCoupon(userId, couponId);
+        verify(userCouponRepository).save(any(UserCoupon.class));
     }
 
     @Test
@@ -183,6 +183,6 @@ class UserCouponServiceTest {
         // then
         assertThat(userCoupon.isUsed()).isTrue();
         assertThat(userCoupon.getUsedAt()).isNotNull();
-        verify(userCouponRepository).update(userCoupon);
+        verify(userCouponRepository).save(userCoupon);
     }
 }

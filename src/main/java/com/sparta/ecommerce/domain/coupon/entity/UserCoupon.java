@@ -1,16 +1,22 @@
 package com.sparta.ecommerce.domain.coupon.entity;
 
-import com.sparta.ecommerce.domain.coupon.dto.UserCouponResponse;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
 import lombok.*;
 
 import java.time.LocalDateTime;
 
+@Entity
 @Getter
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
 @ToString
 public class UserCoupon {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long          userCouponId; // 사용자_쿠폰_ID
     private Long          userId;       // 사용자_ID
     private Long          couponId;     // 쿠폰_ID

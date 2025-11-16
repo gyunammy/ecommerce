@@ -1,6 +1,11 @@
 package com.sparta.ecommerce.domain.user.entity;
 
 import com.sparta.ecommerce.domain.user.exception.UserException;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,11 +15,15 @@ import java.time.LocalDateTime;
 
 import static com.sparta.ecommerce.domain.user.exception.UserErrorCode.INSUFFICIENT_POINT;
 
+@Entity
+@Table(name = "`user`")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long          userId;    // 사용자_ID
     private String        name;      // 사용자명
     private Integer       point;     // 포인트
