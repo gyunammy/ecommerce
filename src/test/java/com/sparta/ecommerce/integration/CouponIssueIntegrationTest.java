@@ -14,7 +14,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -73,49 +72,63 @@ class CouponIssueIntegrationTest {
     @Autowired
     private jakarta.persistence.EntityManager entityManager;
 
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
     private Long couponId;
+    private List<Long> userIds;
     private static final int COUPON_STOCK = 50;
     private static final int THREAD_COUNT = 200;
 
     @BeforeEach
-    @org.springframework.transaction.annotation.Transactional
-    @org.springframework.test.annotation.Commit
     void setUp() {
-        // 기존 데이터 삭제 (외래키 순서 고려)
-        try {
-            entityManager.createQuery("DELETE FROM OrderItem").executeUpdate();
-            entityManager.createQuery("DELETE FROM Order").executeUpdate();
-            entityManager.createQuery("DELETE FROM CartItem").executeUpdate();
-            entityManager.createQuery("DELETE FROM UserCoupon").executeUpdate();
-            entityManager.createQuery("DELETE FROM Coupon").executeUpdate();
-            entityManager.createQuery("DELETE FROM Product").executeUpdate();
-            entityManager.createQuery("DELETE FROM User").executeUpdate();
-        } catch (Exception e) {
-            // 첫 실행 시 데이터가 없을 수 있음
-        }
+        org.springframework.transaction.support.TransactionTemplate transactionTemplate =
+            new org.springframework.transaction.support.TransactionTemplate(transactionManager);
 
-        // 테스트용 쿠폰 생성 (선착순 50개)
-        LocalDateTime now = LocalDateTime.now();
-        Coupon coupon = new Coupon(
-                null,
-                "선착순 10% 할인 쿠폰",
-                "RATE",
-                10,
-                COUPON_STOCK,  // 총 수량 50개
-                0,             // 발급 수량 0개
-                0,
-                now,
-                now.plusDays(30)
-        );
+        transactionTemplate.execute(status -> {
+            // 기존 데이터 삭제 (외래키 순서 고려)
+            try {
+                entityManager.createQuery("DELETE FROM OrderItem").executeUpdate();
+                entityManager.createQuery("DELETE FROM Order").executeUpdate();
+                entityManager.createQuery("DELETE FROM CartItem").executeUpdate();
+                entityManager.createQuery("DELETE FROM UserCoupon").executeUpdate();
+                entityManager.createQuery("DELETE FROM Coupon").executeUpdate();
+                entityManager.createQuery("DELETE FROM Product").executeUpdate();
+                entityManager.createQuery("DELETE FROM User").executeUpdate();
+                entityManager.flush();
+            } catch (Exception e) {
+                // 첫 실행 시 데이터가 없을 수 있음
+            }
 
-        Coupon savedCoupon = couponRepository.save(coupon);
-        couponId = savedCoupon.getCouponId();
+            // 테스트용 쿠폰 생성 (선착순 50개)
+            LocalDateTime now = LocalDateTime.now();
+            Coupon coupon = new Coupon(
+                    null,
+                    "선착순 10% 할인 쿠폰",
+                    "RATE",
+                    10,
+                    COUPON_STOCK,  // 총 수량 50개
+                    0,             // 발급 수량 0개
+                    0,
+                    now,
+                    now.plusDays(30)
+            );
 
-        // 테스트용 사용자 200명 생성
-        for (int i = 1; i <= THREAD_COUNT; i++) {
-            User user = new User(null, "user" + i, 1000000, now);
-            userRepository.save(user);
-        }
+            Coupon savedCoupon = couponRepository.save(coupon);
+            couponId = savedCoupon.getCouponId();
+            entityManager.flush();
+
+            // 테스트용 사용자 200명 생성
+            userIds = new java.util.ArrayList<>();
+            for (int i = 1; i <= THREAD_COUNT; i++) {
+                User user = new User(null, "user" + i, 1000000, now);
+                User savedUser = userRepository.save(user);
+                userIds.add(savedUser.getUserId());
+            }
+            entityManager.flush();
+
+            return null;
+        });
     }
 
     @Test
@@ -130,8 +143,8 @@ class CouponIssueIntegrationTest {
         CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
 
         // when: 200명의 사용자가 동시에 쿠폰 발급 시도
-        for (int i = 1; i <= THREAD_COUNT; i++) {
-            long userId = i;
+        for (int i = 0; i < THREAD_COUNT; i++) {
+            long userId = userIds.get(i);
             executorService.submit(() -> {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
@@ -179,7 +192,7 @@ class CouponIssueIntegrationTest {
     @org.springframework.transaction.annotation.Transactional
     void issueCoupon_duplicateIssue_shouldFail() {
         // given
-        Long userId = 1L;
+        Long userId = userIds.get(0);
 
         // when: 첫 번째 발급 성공
         issueCouponUseCase.issueCoupon(userId, couponId);
@@ -207,8 +220,8 @@ class CouponIssueIntegrationTest {
         ExecutorService executorService = Executors.newFixedThreadPool(50);
         CountDownLatch latch = new CountDownLatch(50);
 
-        for (int i = 1; i <= 50; i++) {
-            long userId = i;
+        for (int i = 0; i < 50; i++) {
+            long userId = userIds.get(i);
             executorService.submit(() -> {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
@@ -225,7 +238,7 @@ class CouponIssueIntegrationTest {
 
         // then: 51번째 사용자는 쿠폰 발급 실패
         try {
-            issueCouponUseCase.issueCoupon(51L, couponId);
+            issueCouponUseCase.issueCoupon(userIds.get(50), couponId);
             org.junit.jupiter.api.Assertions.fail("재고 소진 시 예외가 발생해야 합니다");
         } catch (CouponException e) {
             assertThat(e.getMessage()).contains("쿠폰이 모두 소진되었습니다");
@@ -258,7 +271,7 @@ class CouponIssueIntegrationTest {
 
         // when & then: 발급 시도 시 예외 발생
         try {
-            issueCouponUseCase.issueCoupon(1L, expiredCouponId);
+            issueCouponUseCase.issueCoupon(userIds.get(0), expiredCouponId);
             org.junit.jupiter.api.Assertions.fail("만료된 쿠폰 발급 시 예외가 발생해야 합니다");
         } catch (CouponException e) {
             assertThat(e.getMessage()).contains("만료된 쿠폰입니다");
@@ -267,10 +280,9 @@ class CouponIssueIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 전체 발급 플로우 검증 (사용자 조회 → 쿠폰 검증 → 발급)")
-    @org.springframework.transaction.annotation.Transactional
     void issueCoupon_fullFlow_verification() {
         // given
-        Long userId = 1L;
+        Long userId = userIds.get(0);
 
         // when: 쿠폰 발급
         issueCouponUseCase.issueCoupon(userId, couponId);
