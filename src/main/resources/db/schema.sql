@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS user_coupon (
     coupon_id      BIGINT    NOT NULL                   COMMENT '쿠폰 ID',
     used           BOOLEAN   DEFAULT FALSE              COMMENT '사용 여부',
     issued_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP  COMMENT '발급일시',
-    used_at        TIMESTAMP NULL                       COMMENT '사용일시'
+    used_at        TIMESTAMP NULL                       COMMENT '사용일시',
+    UNIQUE(user_id, coupon_id)
 );
 CREATE INDEX idx_user_coupon_user_id   ON user_coupon(user_id);
 CREATE INDEX idx_user_coupon_coupon_id ON user_coupon(coupon_id);
