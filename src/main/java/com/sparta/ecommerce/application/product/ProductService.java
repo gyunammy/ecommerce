@@ -48,7 +48,7 @@ public class ProductService {
                 .map(CartItemResponse::productId)
                 .toList();
 
-        List<Product> products = productRepository.findAllById(productIds);
+        List<Product> products = productRepository.findAllByIdWithLock(productIds);
 
         Map<Long, Product> productMap = products.stream()
                 .collect(Collectors.toMap(Product::getProductId, product -> product));

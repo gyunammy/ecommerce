@@ -18,10 +18,9 @@ public interface JpaProductRepository extends JpaRepository<Product, Long> {
      * JPA 구현체에서만 동시성 제어를 위해 비관적 락 사용
      * 도메인 레이어는 이를 알 필요 없음 (인프라 구현 세부사항)
      */
-    @Override
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Product p WHERE p.productId IN :productIds")
-    List<Product> findAllById(@Param("productIds") Iterable<Long> productIds);
+    List<Product> findAllByIdWithLock(@Param("productIds") Iterable<Long> productIds);
 
     /**
      * 인기 상품 조회 (조회수 또는 최신순)

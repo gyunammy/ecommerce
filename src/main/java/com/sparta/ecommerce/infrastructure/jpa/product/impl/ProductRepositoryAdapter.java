@@ -25,8 +25,8 @@ public class ProductRepositoryAdapter implements ProductRepository {
     }
 
     @Override
-    public List<Product> findAllById(Iterable<Long> productIds) {
-        return jpaProductRepository.findAllById(productIds);
+    public List<Product> findAllByIdWithLock(Iterable<Long> productIds) {
+        return jpaProductRepository.findAllByIdWithLock(productIds);
     }
 
     @Override

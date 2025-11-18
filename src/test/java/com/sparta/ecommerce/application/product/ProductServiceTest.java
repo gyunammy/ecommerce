@@ -85,7 +85,7 @@ class ProductServiceTest {
         Product product2 = new Product(200L, "상품2", "설명2", 200, 20000, 100, now, now);
         List<Product> products = Arrays.asList(product1, product2);
 
-        given(productRepository.findAllById(Arrays.asList(100L, 200L))).willReturn(products);
+        given(productRepository.findAllByIdWithLock(Arrays.asList(100L, 200L))).willReturn(products);
 
         // when
         Map<Long, Product> result = productService.getProductMap(cartItems);
@@ -94,7 +94,7 @@ class ProductServiceTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(100L)).isEqualTo(product1);
         assertThat(result.get(200L)).isEqualTo(product2);
-        verify(productRepository).findAllById(Arrays.asList(100L, 200L));
+        verify(productRepository).findAllByIdWithLock(Arrays.asList(100L, 200L));
     }
 
     @Test
@@ -109,7 +109,7 @@ class ProductServiceTest {
         Product product1 = new Product(100L, "상품1", "설명1", 100, 10000, 50, now, now);
         List<Product> products = Collections.singletonList(product1); // 999L 상품 없음
 
-        given(productRepository.findAllById(Arrays.asList(100L, 999L))).willReturn(products);
+        given(productRepository.findAllByIdWithLock(Arrays.asList(100L, 999L))).willReturn(products);
 
         // when & then
         assertThatThrownBy(() -> productService.getProductMap(cartItems))
@@ -122,14 +122,14 @@ class ProductServiceTest {
     void getProductMap_emptyCart() {
         // given
         List<CartItemResponse> cartItems = Collections.emptyList();
-        given(productRepository.findAllById(Collections.emptyList())).willReturn(Collections.emptyList());
+        given(productRepository.findAllByIdWithLock(Collections.emptyList())).willReturn(Collections.emptyList());
 
         // when
         Map<Long, Product> result = productService.getProductMap(cartItems);
 
         // then
         assertThat(result).isEmpty();
-        verify(productRepository).findAllById(Collections.emptyList());
+        verify(productRepository).findAllByIdWithLock(Collections.emptyList());
     }
 
     @Test
@@ -202,7 +202,7 @@ class ProductServiceTest {
         Product product = new Product(100L, "상품1", "설명1", 100, 10000, 50, now, now);
         List<Product> products = Collections.singletonList(product);
 
-        given(productRepository.findAllById(Collections.singletonList(100L))).willReturn(products);
+        given(productRepository.findAllByIdWithLock(Collections.singletonList(100L))).willReturn(products);
 
         // when
         Map<Long, Product> result = productService.getProductMap(cartItems);
