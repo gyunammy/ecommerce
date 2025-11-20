@@ -49,7 +49,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",
@@ -86,7 +86,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon expiredCoupon = new Coupon(
                 couponId,
                 "만료된 쿠폰",
@@ -117,7 +117,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon outOfStockCoupon = new Coupon(
                 couponId,
                 "품절된 쿠폰",
@@ -148,7 +148,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",
@@ -181,7 +181,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",

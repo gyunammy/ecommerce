@@ -116,7 +116,7 @@ class CouponIssueIntegrationTest {
             // 테스트용 사용자 200명 생성
             userIds = new java.util.ArrayList<>();
             for (int i = 1; i <= THREAD_COUNT; i++) {
-                User user = new User(null, "user" + i, 1000000, now);
+                User user = new User(null, "user" + i, 1000000, 0L, now);
                 User savedUser = userRepository.save(user);
                 userIds.add(savedUser.getUserId());
             }
