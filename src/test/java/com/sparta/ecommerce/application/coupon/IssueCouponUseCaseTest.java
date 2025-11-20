@@ -61,7 +61,7 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now(),
                 LocalDateTime.now().plusDays(30)
         );
-        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
         given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);
@@ -193,7 +193,7 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now(),
                 LocalDateTime.now().plusDays(30)
         );
-        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
         given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);
