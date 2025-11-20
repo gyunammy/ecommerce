@@ -13,8 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Primary
-@Repository
 public interface JpaOrderItemRepository extends JpaRepository<OrderItem, Long> {
 
     @Query("SELECT oi.productId as productId, SUM(oi.quantity) as soldCount FROM OrderItem oi GROUP BY oi.productId")

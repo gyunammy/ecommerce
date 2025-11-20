@@ -1,9 +1,9 @@
 package com.sparta.ecommerce.application.coupon;
 
+import com.sparta.ecommerce.domain.coupon.CouponRepository;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode;
 import com.sparta.ecommerce.domain.coupon.exception.CouponException;
-import com.sparta.ecommerce.infrastructure.jpa.coupon.JpaCouponRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CouponService {
 
-    private final JpaCouponRepository couponRepository;
+    private final CouponRepository couponRepository;
 
     /**
      * 쿠폰 ID로 쿠폰 조회 (수정을 위한 조회)

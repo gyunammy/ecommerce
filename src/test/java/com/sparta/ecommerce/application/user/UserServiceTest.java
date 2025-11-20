@@ -31,7 +31,7 @@ class UserServiceTest {
     @DisplayName("존재하는_사용자_조회")
     void getUserById_success() {
         // given
-        User user = new User(1L, "test", 0, LocalDateTime.now());
+        User user = new User(1L, "test", 0, 0L, LocalDateTime.now());
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
         // when
@@ -55,7 +55,7 @@ class UserServiceTest {
     @DisplayName("사용자 정보 업데이트")
     void updateUser() {
         // given
-        User user = new User(1L, "test", 0, LocalDateTime.now());
+        User user = new User(1L, "test", 0, 0L, LocalDateTime.now());
 
         // when
         userService.updateUser(user);

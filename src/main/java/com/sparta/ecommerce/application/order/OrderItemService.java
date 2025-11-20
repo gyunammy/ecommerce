@@ -1,7 +1,7 @@
 package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
-import com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository;
+import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -12,7 +12,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OrderItemService {
 
-    private final JpaOrderItemRepository orderItemRepository;
+    private final OrderItemRepository orderItemRepository;
 
     /**
      * 상품별 판매량 조회

@@ -49,7 +49,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",
@@ -61,7 +61,7 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now(),
                 LocalDateTime.now().plusDays(30)
         );
-        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
         given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);
@@ -86,7 +86,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon expiredCoupon = new Coupon(
                 couponId,
                 "만료된 쿠폰",
@@ -117,7 +117,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon outOfStockCoupon = new Coupon(
                 couponId,
                 "품절된 쿠폰",
@@ -148,7 +148,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",
@@ -181,7 +181,7 @@ class IssueCouponUseCaseTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, LocalDateTime.now());
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",
@@ -193,7 +193,7 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now(),
                 LocalDateTime.now().plusDays(30)
         );
-        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
         given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);

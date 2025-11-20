@@ -40,7 +40,7 @@ class UserCouponServiceTest {
         // given
         Long userId = 1L;
         Long couponId = 1L;
-        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
         given(userCouponRepository.findByUserIdAndCouponId(userId, couponId))
                 .willReturn(Optional.of(userCoupon));
 
@@ -73,7 +73,7 @@ class UserCouponServiceTest {
         // given
         Long userId = 1L;
         Long couponId = 1L;
-        UserCoupon expectedCoupon = new UserCoupon(1L, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon expectedCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
         given(userCouponRepository.save(any(UserCoupon.class))).willReturn(expectedCoupon);
 
         // when
@@ -92,7 +92,7 @@ class UserCouponServiceTest {
         Long userId = 1L;
         Long couponId = 1L;
 
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, couponId, false, 0L, LocalDateTime.now(), null);
         Coupon coupon = new Coupon(couponId, "10% 할인", "RATE", 10, 100, 1, 0, LocalDateTime.now(), LocalDateTime.now().plusDays(30));
 
         given(userCouponRepository.findById(userCouponId)).willReturn(Optional.of(userCoupon));
@@ -128,7 +128,7 @@ class UserCouponServiceTest {
         Long userId = 1L;
         Long differentUserId = 2L;
 
-        UserCoupon userCoupon = new UserCoupon(userCouponId, differentUserId, 1L, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(userCouponId, differentUserId, 1L, false, 0L, LocalDateTime.now(), null);
         given(userCouponRepository.findById(userCouponId)).willReturn(Optional.of(userCoupon));
 
         // when & then
@@ -144,7 +144,7 @@ class UserCouponServiceTest {
         Long userCouponId = 1L;
         Long userId = 1L;
 
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, true, LocalDateTime.now(), LocalDateTime.now());
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, true, 0L, LocalDateTime.now(), LocalDateTime.now());
         given(userCouponRepository.findById(userCouponId)).willReturn(Optional.of(userCoupon));
 
         // when & then
@@ -161,7 +161,7 @@ class UserCouponServiceTest {
         Long userId = 1L;
         Long couponId = 999L;
 
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, couponId, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, couponId, false, 0L, LocalDateTime.now(), null);
         given(userCouponRepository.findById(userCouponId)).willReturn(Optional.of(userCoupon));
         given(couponRepository.findById(couponId)).willReturn(Optional.empty());
 
@@ -175,7 +175,7 @@ class UserCouponServiceTest {
     @DisplayName("쿠폰 사용 처리")
     void markAsUsed() {
         // given
-        UserCoupon userCoupon = new UserCoupon(1L, 1L, 1L, false, LocalDateTime.now(), null);
+        UserCoupon userCoupon = new UserCoupon(1L, 1L, 1L, false, 0L, LocalDateTime.now(), null);
 
         // when
         userCouponService.markAsUsed(userCoupon);

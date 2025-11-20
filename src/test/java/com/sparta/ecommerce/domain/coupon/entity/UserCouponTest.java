@@ -18,6 +18,7 @@ class UserCouponTest {
                 1L,
                 1L,
                 false,
+                0L,
                 LocalDateTime.now(),
                 null
         );
@@ -43,6 +44,7 @@ class UserCouponTest {
                 1L,
                 1L,
                 true,
+                0L,
                 LocalDateTime.now().minusDays(1),
                 firstUsedAt
         );
@@ -66,6 +68,7 @@ class UserCouponTest {
                 1L,
                 1L,
                 false,
+                0L,
                 issuedAt,
                 null
         );

@@ -1,6 +1,7 @@
 package com.sparta.ecommerce.domain.order;
 
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
+import com.sparta.ecommerce.domain.order.entity.OrderItem;
 
 import java.util.List;
 import java.util.Map;
@@ -18,4 +19,6 @@ public interface OrderItemRepository {
      * @return 판매량 기준 인기 상품 목록
      */
     List<ProductResponse> findTopProductsBySoldCount(int limit);
+
+    void saveAll(List<OrderItem> orderItems);
 }

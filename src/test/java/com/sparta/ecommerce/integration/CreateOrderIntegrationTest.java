@@ -132,7 +132,7 @@ class CreateOrderIntegrationTest {
 
         // 테스트용 사용자 100명 생성 (포인트 충분)
         for (int i = 1; i <= 100; i++) {
-            User user = new User((long) i, "user" + i, 1000000, now);
+            User user = new User((long) i, "user" + i, 1000000, 0L, now);
             userRepository.save(user);
 
             // 각 사용자마다 장바구니에 상품 1개씩 추가
@@ -223,7 +223,7 @@ class CreateOrderIntegrationTest {
         // given: 기존 사용자(id=1)의 포인트를 100원으로 변경
         Long userId = 1L;
         User user = userRepository.findById(userId).orElseThrow();
-        User poorUser = new User(userId, user.getName(), 100, user.getCreatedAt());  // 100원만 보유
+        User poorUser = new User(userId, user.getName(), 100, user.getVersion(), user.getCreatedAt());  // 100원만 보유
         userRepository.save(poorUser);
 
         // 영속성 컨텍스트를 DB에 반영
@@ -374,7 +374,7 @@ class CreateOrderIntegrationTest {
 
         // 20명의 사용자 생성 및 장바구니 추가
         for (int i = 101; i <= 120; i++) {
-            User user = new User((long) i, "limitedUser" + i, 100000, now);
+            User user = new User((long) i, "limitedUser" + i, 100000, 0L, now);
             userRepository.save(user);
 
             CartItem cartItem = new CartItem((long) (i + 1000), (long) i, limitedProductId, 1, now, now);

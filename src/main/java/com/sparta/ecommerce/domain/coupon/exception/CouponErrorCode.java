@@ -9,7 +9,8 @@ public enum CouponErrorCode {
     USER_COUPON_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자 쿠폰을 찾을 수 없습니다."),
     COUPON_ALREADY_USED(HttpStatus.CONFLICT, "이미 사용된 쿠폰입니다."),
     COUPON_EXPIRED(HttpStatus.BAD_REQUEST, "만료된 쿠폰입니다."),
-    COUPON_NOT_OWNED(HttpStatus.FORBIDDEN, "본인의 쿠폰이 아닙니다.");
+    COUPON_NOT_OWNED(HttpStatus.FORBIDDEN, "본인의 쿠폰이 아닙니다."),
+    COUPON_LOCK_TIMEOUT(HttpStatus.CONFLICT, "현재 많은 사용자가 쿠폰을 발급받고 있습니다. 잠시 후 다시 시도해주세요.");
 
     private final HttpStatus status;
     private final String message;
