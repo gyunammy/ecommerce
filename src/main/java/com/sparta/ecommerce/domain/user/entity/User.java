@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -24,10 +25,13 @@ import static com.sparta.ecommerce.domain.user.exception.UserErrorCode.INSUFFICI
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long          userId;    // 사용자_ID
-    private String        name;      // 사용자명
-    private Integer       point;     // 포인트
-    private LocalDateTime createdAt; // 생성일시
+    private Long          userId;        // 사용자_ID
+    private String        name;          // 사용자명
+    private Integer       point;         // 포인트
+    @Version
+    private Long          version =  0L; // 낙관적 락 버전
+    private LocalDateTime createdAt;     // 생성일시
+
 
     public void validateSufficientPoint(int amount) {
         if (this.point < amount) {

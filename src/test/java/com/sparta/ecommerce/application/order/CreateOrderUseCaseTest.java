@@ -304,7 +304,7 @@ class CreateOrderUseCaseTest {
         int totalAmount = 50000;
 
         LocalDateTime now = LocalDateTime.now();
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, now, now);
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, 0L, now, now);
         Coupon coupon = new Coupon(1L, "5000원 할인", "AMOUNT", 5000, 100, 10, 5, now, now);
 
         UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
@@ -338,7 +338,7 @@ class CreateOrderUseCaseTest {
         int totalAmount = 100000;
 
         LocalDateTime now = LocalDateTime.now();
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 2L, false, now, now);
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 2L, false, 0L, now, now);
         Coupon coupon = new Coupon(2L, "10% 할인", "RATE", 10, 100, 20, 8, now, now);
 
         UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
@@ -480,7 +480,7 @@ class CreateOrderUseCaseTest {
         // User Mock 설정 - 충분한 포인트를 가진 사용자
         given(userService.getUserById(anyLong())).willAnswer(invocation -> {
             Long userId = invocation.getArgument(0);
-            return new User(userId, "user" + userId, 1000000, now); // 충분한 포인트
+            return new User(userId, "user" + userId, 1000000, 0L, now); // 충분한 포인트
         });
         doNothing().when(userService).updateUser(any());
 
@@ -552,7 +552,7 @@ class CreateOrderUseCaseTest {
         LocalDateTime now = LocalDateTime.now();
 
         // 사용자 (초기 포인트 100,000)
-        User user = new User(userId, "testUser", 100000, now);
+        User user = new User(userId, "testUser", 100000, 0L, now);
         given(userService.getUserById(userId)).willReturn(user);
 
         // 장바구니 (상품 1개, 수량 5)
@@ -565,7 +565,7 @@ class CreateOrderUseCaseTest {
         given(productService.getProductMap(any())).willReturn(Map.of(productId, product));
 
         // 쿠폰 (5,000원 할인)
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, now, null);
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, 0L, now, null);
         Coupon coupon = new Coupon(1L, "5000원 할인", "AMOUNT", 5000, 100, 10, 5, now, now);
         UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
         given(userCouponService.validateAndGetCoupon(userCouponId, userId)).willReturn(validatedCoupon);
@@ -604,7 +604,7 @@ class CreateOrderUseCaseTest {
         LocalDateTime now = LocalDateTime.now();
 
         // 사용자 (초기 포인트 100,000)
-        User user = new User(userId, "testUser", 100000, now);
+        User user = new User(userId, "testUser", 100000, 0L, now);
         given(userService.getUserById(userId)).willReturn(user);
 
         // 장바구니 (상품 1개, 수량 3)
@@ -649,7 +649,7 @@ class CreateOrderUseCaseTest {
         LocalDateTime now = LocalDateTime.now();
 
         // 사용자
-        User user = new User(userId, "testUser", 200000, now);
+        User user = new User(userId, "testUser", 200000, 0L, now);
         given(userService.getUserById(userId)).willReturn(user);
 
         // 장바구니 (3개 상품)

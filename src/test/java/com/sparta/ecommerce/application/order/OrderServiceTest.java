@@ -1,7 +1,7 @@
 package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
-import com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository;
+import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.OrderRepository;
 import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.order.entity.OrderItem;
@@ -32,7 +32,7 @@ class OrderServiceTest {
     private OrderRepository orderRepository;
 
     @Mock
-    private com.sparta.ecommerce.infrastructure.jpa.order.JpaOrderItemRepository orderItemRepository;
+    private OrderItemRepository orderItemRepository;
 
     @InjectMocks
     private OrderService orderService;

@@ -1,14 +1,14 @@
 package com.sparta.ecommerce.domain.coupon.entity;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
 
 @Entity
+@Table(uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"userId", "couponId"})
+})
 @Getter
 @Setter
 @AllArgsConstructor
@@ -21,6 +21,8 @@ public class UserCoupon {
     private Long          userId;       // 사용자_ID
     private Long          couponId;     // 쿠폰_ID
     private boolean       used;         // 사용_여부
+    @Version
+    private Long          version = 0L; // 낙관적 락 버전
     private LocalDateTime issuedAt;     // 발급일
     private LocalDateTime usedAt;       // 사용일
 

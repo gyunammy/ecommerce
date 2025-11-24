@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS `user` (
     user_id    BIGINT      PRIMARY KEY AUTO_INCREMENT COMMENT '사용자 ID',
     name       VARCHAR(50) NOT NULL                   COMMENT '사용자명',
     point      INT         DEFAULT 0                  COMMENT '보유 포인트',
+    version    BIGINT      DEFAULT 0                  COMMENT '낙관적 락 버전',
     created_at DATETIME    DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시'
 );
 
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS user_coupon (
     coupon_id      BIGINT    NOT NULL                   COMMENT '쿠폰 ID',
     used           BOOLEAN   DEFAULT FALSE              COMMENT '사용 여부',
     issued_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP  COMMENT '발급일시',
-    used_at        TIMESTAMP NULL                       COMMENT '사용일시'
+    used_at        TIMESTAMP NULL                       COMMENT '사용일시',
+    UNIQUE(user_id, coupon_id)
 );
 CREATE INDEX idx_user_coupon_user_id   ON user_coupon(user_id);
 CREATE INDEX idx_user_coupon_coupon_id ON user_coupon(coupon_id);
