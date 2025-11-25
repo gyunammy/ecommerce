@@ -1,9 +1,9 @@
 package com.sparta.ecommerce.application.coupon;
 
 import com.sparta.ecommerce.application.user.UserService;
+import com.sparta.ecommerce.domain.coupon.CouponRepository;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
-import com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode;
 import com.sparta.ecommerce.domain.coupon.exception.CouponException;
 import com.sparta.ecommerce.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
@@ -14,24 +14,23 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Optional;
 
 import static com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class IssueCouponUseCaseTest {
 
     @Mock
     private UserService userService;
+
+    @Mock
+    private CouponRepository couponRepository;
 
     @Mock
     private CouponService couponService;
@@ -64,7 +63,7 @@ class IssueCouponUseCaseTest {
         UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(false);
         given(userCouponService.issueCoupon(userId, couponId)).willReturn(userCoupon);
 
@@ -73,10 +72,10 @@ class IssueCouponUseCaseTest {
 
         // then
         verify(userService).getUserById(userId);
-        verify(couponService).getCouponForUpdate(couponId);
+        verify(couponRepository).findById(couponId);
         verify(userCouponService).hasCoupon(userId, couponId);
-        verify(couponService).saveCoupon(coupon);
         verify(userCouponService).issueCoupon(userId, couponId);
+        verify(couponService).saveCoupon(coupon);
     }
 
     @Test
@@ -100,7 +99,7 @@ class IssueCouponUseCaseTest {
         );
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponService.getCouponForUpdate(couponId)).willReturn(expiredCoupon);
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(expiredCoupon));
 
         // when & then
         assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
@@ -131,7 +130,7 @@ class IssueCouponUseCaseTest {
         );
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponService.getCouponForUpdate(couponId)).willReturn(outOfStockCoupon);
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(outOfStockCoupon));
 
         // when & then
         assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
@@ -162,7 +161,7 @@ class IssueCouponUseCaseTest {
         );
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(true);  // 이미 보유
 
         // when & then
@@ -196,7 +195,7 @@ class IssueCouponUseCaseTest {
         UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponService.getCouponForUpdate(couponId)).willReturn(coupon);
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(false);
         given(userCouponService.issueCoupon(userId, couponId)).willReturn(userCoupon);
 
@@ -204,9 +203,7 @@ class IssueCouponUseCaseTest {
         issueCouponUseCase.issueCoupon(userId, couponId);
 
         // then
-        // increaseIssuedQuantity()가 호출되어 51로 증가했는지 확인할 수 있지만,
-        // Mockito로는 내부 상태 변경을 직접 검증하기 어려우므로
-        // saveCoupon이 호출되었는지만 확인
+        // saveCoupon이 호출되어 발급 수량이 증가한 쿠폰이 저장됨
         verify(couponService).saveCoupon(coupon);
     }
 }

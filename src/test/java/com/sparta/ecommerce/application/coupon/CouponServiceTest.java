@@ -43,10 +43,10 @@ class CouponServiceTest {
                 LocalDateTime.now(),
                 LocalDateTime.now().plusDays(30)
         );
-        given(couponRepository.findByIdWithPessimisticLock(1L)).willReturn(Optional.of(coupon));
+        given(couponRepository.findById(1L)).willReturn(Optional.of(coupon));
 
         // when
-        Coupon result = couponService.getCouponForUpdate(1L);
+        Coupon result = couponService.getCouponById(1L);
 
         // then
         assertThat(result).isEqualTo(coupon);
@@ -57,7 +57,7 @@ class CouponServiceTest {
     @DisplayName("존재하지 않는 쿠폰 조회 시 예외 발생")
     void getCoupon_notFound() {
         // when & then
-        assertThatThrownBy(() -> couponService.getCouponForUpdate(999L))
+        assertThatThrownBy(() -> couponService.getCouponById(999L))
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining(COUPON_NOT_FOUND.getMessage());
     }
