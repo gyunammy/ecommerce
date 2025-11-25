@@ -3,7 +3,6 @@ package com.sparta.ecommerce.application.product;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
 import com.sparta.ecommerce.domain.product.ProductRepository;
-import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import lombok.RequiredArgsConstructor;
@@ -79,7 +78,7 @@ public class ProductService {
      * @return 조회수 기준 인기 상품 목록
      */
     public List<ProductResponse> findTopProductsByViewCount(int limit) {
-        return productRepository.findTopProducts(ProductSortType.VIEW_COUNT, limit)
+        return productRepository.findTopProductsByViewCount(limit)
                 .stream()
                 .map(Product::from)
                 .collect(Collectors.toList());

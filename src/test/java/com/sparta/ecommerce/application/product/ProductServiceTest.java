@@ -3,7 +3,6 @@ package com.sparta.ecommerce.application.product;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
 import com.sparta.ecommerce.domain.product.ProductRepository;
-import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import org.junit.jupiter.api.DisplayName;
@@ -157,7 +156,7 @@ class ProductServiceTest {
         Product product3 = new Product(3L, "인기상품3", "설명3", 300, 30000, 300, now, now);
 
         List<Product> topProducts = Arrays.asList(product1, product2, product3);
-        given(productRepository.findTopProducts(ProductSortType.VIEW_COUNT, limit)).willReturn(topProducts);
+        given(productRepository.findTopProductsByViewCount(limit)).willReturn(topProducts);
 
         // when
         List<ProductResponse> result = productService.findTopProductsByViewCount(limit);
@@ -167,7 +166,7 @@ class ProductServiceTest {
         assertThat(result.get(0).viewCount()).isEqualTo(500);
         assertThat(result.get(1).viewCount()).isEqualTo(400);
         assertThat(result.get(2).viewCount()).isEqualTo(300);
-        verify(productRepository).findTopProducts(ProductSortType.VIEW_COUNT, limit);
+        verify(productRepository).findTopProductsByViewCount(limit);
     }
 
     @Test
