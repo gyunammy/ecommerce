@@ -11,12 +11,15 @@ import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import com.sparta.ecommerce.domain.user.entity.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -33,6 +36,7 @@ import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.INS
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
 
@@ -54,8 +58,26 @@ class CreateOrderUseCaseTest {
     @Mock
     private ProductService productService;
 
+    @Mock
+    private RedissonClient redissonClient;
+
+    @Mock
+    private RLock rLock;
+
     @InjectMocks
     private CreateOrderUseCase createOrderUseCase;
+
+    @BeforeEach
+    void setUp() throws InterruptedException {
+        // Redis MultiLock 모킹 설정 (lenient 모드로 불필요한 stubbing 허용)
+        org.mockito.Mockito.lenient().when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        org.mockito.Mockito.lenient().when(redissonClient.getMultiLock(any(RLock[].class))).thenReturn(rLock);
+        org.mockito.Mockito.lenient().when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        org.mockito.Mockito.lenient().when(rLock.isHeldByCurrentThread()).thenReturn(true);
+
+        // Self 주입 설정: self가 실제 createOrderUseCase를 가리키도록 설정
+        ReflectionTestUtils.setField(createOrderUseCase, "self", createOrderUseCase);
+    }
 
     @Test
     @DisplayName("calculateTotalAmount - 장바구니 총액 계산 성공")
@@ -470,8 +492,8 @@ class CreateOrderUseCaseTest {
         // 실제 Product 객체 생성 (재고를 공유하도록)
         Product sharedProduct = new Product(productId, "테스트상품", "설명", productStock, 10000, 50, now, now);
 
-        // ProductService Mock 설정 - getProductMap에서 공유 Product 반환
-        given(productService.getProductMap(any())).willReturn(Map.of(productId, sharedProduct));
+        // ProductService Mock 설정 - getProductMapByIds에서 공유 Product 반환
+        given(productService.getProductMapByIds(any())).willReturn(Map.of(productId, sharedProduct));
         doAnswer(invocation -> {
             // updateProduct 호출 시 실제로는 아무것도 하지 않음 (재고는 도메인 모델에서 관리)
             return null;
@@ -562,7 +584,7 @@ class CreateOrderUseCaseTest {
 
         // 상품 (초기 재고 100개, 가격 10,000원)
         Product product = new Product(productId, "테스트상품", "설명", 100, 10000, 50, now, now);
-        given(productService.getProductMap(any())).willReturn(Map.of(productId, product));
+        given(productService.getProductMapByIds(any())).willReturn(Map.of(productId, product));
 
         // 쿠폰 (5,000원 할인)
         UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, 0L, now, null);
@@ -614,7 +636,7 @@ class CreateOrderUseCaseTest {
 
         // 상품 (초기 재고 50개, 가격 20,000원)
         Product product = new Product(productId, "테스트상품2", "설명2", 50, 20000, 30, now, now);
-        given(productService.getProductMap(any())).willReturn(Map.of(productId, product));
+        given(productService.getProductMapByIds(any())).willReturn(Map.of(productId, product));
 
         // OrderService에서 예외 발생
         given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
@@ -665,7 +687,7 @@ class CreateOrderUseCaseTest {
         Product product1 = new Product(productId1, "상품1", "설명1", 100, 10000, 50, now, now);
         Product product2 = new Product(productId2, "상품2", "설명2", 200, 5000, 100, now, now);
         Product product3 = new Product(productId3, "상품3", "설명3", 150, 15000, 80, now, now);
-        given(productService.getProductMap(any())).willReturn(
+        given(productService.getProductMapByIds(any())).willReturn(
                 Map.of(productId1, product1, productId2, product2, productId3, product3)
         );
 

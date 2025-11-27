@@ -1,10 +1,7 @@
 package com.sparta.ecommerce.infrastructure.jpa.product;
 
-import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import jakarta.persistence.LockModeType;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -25,15 +22,11 @@ public interface JpaProductRepository extends JpaRepository<Product, Long> {
     List<Product> findAllByIdWithLock(@Param("productIds") Iterable<Long> productIds);
 
     /**
-     * 인기 상품 조회 (조회수 또는 최신순)
+     * 조회수 기준 인기 상품 조회 (상위 N개)
+     *
+     * @param limit 조회할 상품 개수
+     * @return 조회수 내림차순 상위 N개 상품
      */
-    default List<Product> findTopProducts(ProductSortType sortType, int limit) {
-        Sort sort;
-        if (sortType == ProductSortType.VIEW_COUNT) {
-            sort = Sort.by(Sort.Direction.DESC, "viewCount");
-        } else {
-            sort = Sort.by(Sort.Direction.DESC, "createdAt");
-        }
-        return findAll(PageRequest.of(0, limit, sort)).getContent();
-    }
+    @Query("SELECT p FROM Product p ORDER BY p.viewCount DESC LIMIT :limit")
+    List<Product> findTopProductsByViewCount(@Param("limit") int limit);
 }
