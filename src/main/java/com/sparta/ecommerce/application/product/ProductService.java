@@ -1,11 +1,11 @@
 package com.sparta.ecommerce.application.product;
 
-import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
 import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import lombok.RequiredArgsConstructor;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,6 +19,7 @@ import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.PRO
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final RedissonClient redissonClient;
 
     /**
      * 모든 상품 조회
@@ -38,23 +39,23 @@ public class ProductService {
      * N+1 문제를 방지하기 위해 배치 조회를 사용하며,
      * 빠른 상품 조회를 위해 상품 ID를 키로 하는 Map을 생성합니다.
      *
-     * @param cartItems 장바구니 상품 목록
+     * 주의: 이 메서드는 락을 획득하지 않습니다.
+     * 동시성 제어가 필요한 경우 호출자가 락을 관리해야 합니다.
+     *
+     * @param productIds 상품 ID 목록
      * @return 상품 ID를 키로, Product 객체를 값으로 하는 Map
      * @throws ProductException 상품을 찾을 수 없는 경우
      */
-    public Map<Long, Product> getProductMap(List<CartItemResponse> cartItems) {
-        List<Long> productIds = cartItems.stream()
-                .map(CartItemResponse::productId)
-                .toList();
-
-        List<Product> products = productRepository.findAllByIdWithLock(productIds);
+    public Map<Long, Product> getProductMapByIds(List<Long> productIds) {
+        // 상품 조회
+        List<Product> products = productRepository.findAllById(productIds);
 
         Map<Long, Product> productMap = products.stream()
                 .collect(Collectors.toMap(Product::getProductId, product -> product));
 
         // 상품 존재 여부 검증
-        for (CartItemResponse cartItem : cartItems) {
-            if (!productMap.containsKey(cartItem.productId())) {
+        for (Long productId : productIds) {
+            if (!productMap.containsKey(productId)) {
                 throw new ProductException(PRODUCT_NOT_FOUND);
             }
         }
