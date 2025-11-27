@@ -80,7 +80,9 @@ jacocoTestReport {
                     '**/controller/**',
                     '**/infrastructure/**',
                     '**/*Controller.*',
-                    '**/*ControllerAdvice.*'
+                    '**/*ControllerAdvice.*',
+                    '**/scheduler/**',
+                    '**/*Scheduler.*'
             ])
         }))
     }
@@ -105,7 +107,9 @@ jacocoTestCoverageVerification {
                     '**/presentation/**',
                     '**/infrastructure/**',
                     '**/*Controller.*',
-                    '**/*ControllerAdvice.*'
+                    '**/*ControllerAdvice.*',
+                    '**/scheduler/**',
+                    '**/*Scheduler.*'
             ])
         }))
     }
