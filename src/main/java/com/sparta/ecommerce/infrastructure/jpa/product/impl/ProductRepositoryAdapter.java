@@ -1,7 +1,6 @@
 package com.sparta.ecommerce.infrastructure.jpa.product.impl;
 
 import com.sparta.ecommerce.domain.product.ProductRepository;
-import com.sparta.ecommerce.domain.product.ProductSortType;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.infrastructure.jpa.product.JpaProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,12 +24,17 @@ public class ProductRepositoryAdapter implements ProductRepository {
     }
 
     @Override
+    public List<Product> findAllById(Iterable<Long> productIds) {
+        return jpaProductRepository.findAllById(productIds);
+    }
+
+    @Override
     public List<Product> findAllByIdWithLock(Iterable<Long> productIds) {
         return jpaProductRepository.findAllByIdWithLock(productIds);
     }
 
     @Override
-    public List<Product> findTopProducts(ProductSortType sortType, int limit) {
-        return jpaProductRepository.findTopProducts(sortType, limit);
+    public List<Product> findTopProductsByViewCount(int limit) {
+        return jpaProductRepository.findTopProductsByViewCount(limit);
     }
 }

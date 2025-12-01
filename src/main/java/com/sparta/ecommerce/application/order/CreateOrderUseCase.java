@@ -6,40 +6,38 @@ import com.sparta.ecommerce.application.product.ProductService;
 import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.cart.exception.CartException;
-import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
-import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
-import lombok.RequiredArgsConstructor;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_EMPTY;
 
 /**
  * 주문 생성 유스케이스
  *
- * 사용자의 장바구니 상품을 기반으로 주문을 생성하는 비즈니스 로직을 처리합니다.
- * 주문 생성 과정에서 재고 검증, 쿠폰 적용, 포인트 차감 등을 수행합니다.
+ * 장바구니 상품을 기반으로 주문을 생성합니다.
+ * Redis MultiLock과 @Transactional을 조합하여 동시성 제어 및 원자성을 보장합니다.
  *
- * 주문 생성 흐름:
- *   - 사용자 및 장바구니 조회
- *   - 상품 재고 검증 (Pessimistic Lock으로 동시성 제어)
- *   - 주문 금액 계산
- *   - 쿠폰 할인 적용
- *   - 사용자 포인트 검증 및 차감
- *   - 주문 생성 및 재고 차감
+ * 동시성 제어 전략:
+ *   1. Redis MultiLock 획득 (트랜잭션 밖) - DB 커넥션 고갈 방지
+ *   2. 트랜잭션 시작 (락 안)
+ *   3. 상품 조회 + 검증 + 상태 변경 (트랜잭션 안, 락 안) - TOCTOU 방지
+ *   4. 트랜잭션 커밋
+ *   5. 락 해제
  *
- * 트랜잭션 및 동시성 제어:
- *   - @Transactional로 원자성 보장 (예외 발생 시 자동 롤백)
- *   - Pessimistic Lock으로 재고 동시성 제어 (ProductRepository.findAllById)
+ * Self 주입 패턴:
+ *   내부 메서드의 @Transactional이 동작하도록 self를 통해 프록시 호출
  */
 @Service
-@RequiredArgsConstructor
 public class CreateOrderUseCase {
 
     private final CartService cartService;
@@ -47,92 +45,133 @@ public class CreateOrderUseCase {
     private final UserCouponService userCouponService;
     private final OrderService orderService;
     private final ProductService productService;
+    private final RedissonClient redissonClient;
+
+    // Self 주입: @Transactional이 동작하도록 프록시를 통해 호출
+    private final CreateOrderUseCase self;
+
+    // 생성자 주입 (Self 주입 시 @Lazy 필수)
+    public CreateOrderUseCase(
+            CartService cartService,
+            UserService userService,
+            UserCouponService userCouponService,
+            OrderService orderService,
+            ProductService productService,
+            RedissonClient redissonClient,
+            @Lazy CreateOrderUseCase self  // 순환 참조 방지
+    ) {
+        this.cartService = cartService;
+        this.userService = userService;
+        this.userCouponService = userCouponService;
+        this.orderService = orderService;
+        this.productService = productService;
+        this.redissonClient = redissonClient;
+        this.self = self;
+    }
 
     /**
      * 주문을 생성합니다.
      *
-     * 사용자의 장바구니 상품을 기반으로 주문을 생성하고,
-     * 재고, 포인트, 쿠폰 유효성을 검증한 후 주문을 확정합니다.
-     *
-     * Pessimistic Lock을 통해 상품 재고에 대한 동시성을 제어하며,
-     * 트랜잭션 내에서 모든 작업이 원자적으로 실행됩니다.
-     * 예외 발생 시 Spring의 트랜잭션 관리에 의해 자동으로 롤백됩니다.
-     *
      * @param userId 사용자 ID
-     * @param userCouponId 쿠폰 ID
+     * @param userCouponId 사용할 쿠폰 ID (null 가능)
      * @throws com.sparta.ecommerce.domain.user.exception.UserException 사용자를 찾을 수 없거나 포인트가 부족한 경우
      * @throws com.sparta.ecommerce.domain.product.exception.ProductException 상품을 찾을 수 없거나 재고가 부족한 경우
      * @throws com.sparta.ecommerce.domain.coupon.exception.CouponException 쿠폰이 유효하지 않은 경우
+     * @throws com.sparta.ecommerce.domain.cart.exception.CartException 장바구니가 비어있는 경우
      */
-    @Transactional
     public void createOrder(Long userId, Long userCouponId) {
-        // === 1단계: 모든 검증 ===
-
-        // 1-1. 사용자 유효성 검증
+        // 사용자 및 장바구니 조회
         User user = userService.getUserById(userId);
-
-        // 1-2. 장바구니 조회
         List<CartItemResponse> findCartItems = cartService.getCartItems(userId);
-
-        // 1-3. 빈 장바구니 체크
         if (findCartItems.isEmpty()) throw new CartException(CART_IS_EMPTY);
 
-        // 1-4. 상품 정보 조회 및 Map 변환 (Pessimistic Lock 적용, 상품 존재 여부 검증 포함)
-        Map<Long, Product> productMap = productService.getProductMap(findCartItems);
+        // 상품 ID 추출 및 정렬 (데드락 방지)
+        List<Long> productIds = findCartItems.stream()
+                .map(CartItemResponse::productId)
+                .distinct()
+                .sorted()
+                .toList();
 
-        // 1-5. 재고 검증 (도메인 모델 사용)
+        // Redis MultiLock 생성
+        RLock[] locks = productIds.stream()
+                .map(id -> redissonClient.getLock("product:lock:" + id))
+                .toArray(RLock[]::new);
+        RLock multiLock = redissonClient.getMultiLock(locks);
+
+        try {
+            boolean available = multiLock.tryLock(30, 10, TimeUnit.SECONDS);
+            if (!available) {
+                throw new IllegalStateException("상품 락을 획득할 수 없습니다");
+            }
+
+            // Self를 통해 호출하여 프록시를 거쳐 @Transactional 동작
+            self.executeOrderTransaction(user, userCouponId, findCartItems, productIds);
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("락 획득 중 인터럽트 발생", e);
+        } finally {
+            if (multiLock.isHeldByCurrentThread()) {
+                multiLock.unlock();
+            }
+        }
+    }
+
+    /**
+     * 트랜잭션 내에서 주문 생성 로직을 수행합니다.
+     *
+     * Redis 락이 획득된 상태에서 호출되며, 상품 조회부터 주문 생성까지 원자적으로 처리합니다.
+     *
+     * 주의: Self 주입 패턴 사용
+     * - 반드시 self.executeOrderTransaction()으로 호출해야 @Transactional이 동작합니다.
+     * - this.executeOrderTransaction()으로 호출하면 트랜잭션이 적용되지 않습니다.
+     *
+     * @param user 사용자
+     * @param userCouponId 사용할 쿠폰 ID (null 가능)
+     * @param findCartItems 장바구니 상품 목록
+     * @param productIds 정렬된 상품 ID 목록
+     */
+    @Transactional
+    public void executeOrderTransaction(
+            User user,
+            Long userCouponId,
+            List<CartItemResponse> findCartItems,
+            List<Long> productIds
+    ) {
+        // 상품 조회
+        Map<Long, Product> productMap = productService.getProductMapByIds(productIds);
+
+        // 검증
         validateStock(findCartItems, productMap);
-
-        // 1-6. 장바구니 총액 계산
         int totalAmount = calculateTotalAmount(findCartItems, productMap);
-
-        // 1-7. 쿠폰 처리 및 할인 계산
-        CouponDiscountResult couponResult = processCouponDiscount(userCouponId, userId, totalAmount);
-
-        // 1-8. 최종 결제 금액 계산
+        CouponDiscountResult couponResult = processCouponDiscount(userCouponId, user.getUserId(), totalAmount);
         int finalAmount = calculateFinalAmount(totalAmount, couponResult.discountAmount());
-
-        // 1-9. 포인트 검증 (도메인 모델 사용)
         user.validateSufficientPoint(finalAmount);
 
-        // === 2단계: 상태 변경 ===
-
-        // 2-1. 쿠폰 사용 처리
+        // 상태 변경
         if (couponResult.userCoupon() != null) {
             userCouponService.markAsUsed(couponResult.userCoupon());
         }
-
-        // 2-2. 포인트 차감
         user.deductPoint(finalAmount);
         userService.updateUser(user);
-
-        // 2-3. 재고 차감
         decreaseStock(findCartItems, productMap);
 
-        // === 3단계: 주문 생성 ===
+        // 주문 생성
         orderService.createOrder(
-                userId,
+                user.getUserId(),
                 userCouponId,
                 totalAmount,
                 couponResult.discountAmount(),
-                finalAmount,  // 실제 사용한 포인트
+                finalAmount,
                 findCartItems,
                 productMap
         );
 
-        // === 4단계: 장바구니 비우기 ===
-        cartService.clearCart(userId);
-
-        // TODO: 외부로 주문완료 데이터 전송
+        cartService.clearCart(user.getUserId());
     }
 
     /**
-     * 재고 검증
-     * 도메인 모델을 사용하여 각 상품의 재고를 검증합니다.
-     *
-     * @param cartItems 장바구니 상품 목록
-     * @param productMap 상품 ID를 키로 하는 상품 정보 Map
-     * @throws com.sparta.ecommerce.domain.product.exception.ProductException 재고가 부족한 경우
+     * 장바구니 상품들의 재고를 검증합니다.
      */
     private void validateStock(List<CartItemResponse> cartItems, Map<Long, Product> productMap) {
         for (CartItemResponse cartItem : cartItems) {
@@ -142,11 +181,7 @@ public class CreateOrderUseCase {
     }
 
     /**
-     * 재고 차감
-     * 도메인 모델을 사용하여 각 상품의 재고를 차감하고 저장합니다.
-     *
-     * @param cartItems 장바구니 상품 목록
-     * @param productMap 상품 ID를 키로 하는 상품 정보 Map
+     * 장바구니 상품들의 재고를 차감하고 저장합니다.
      */
     private void decreaseStock(List<CartItemResponse> cartItems, Map<Long, Product> productMap) {
         for (CartItemResponse cartItem : cartItems) {
@@ -157,16 +192,7 @@ public class CreateOrderUseCase {
     }
 
     /**
-     * 쿠폰을 검증하고 할인 금액을 계산합니다.
-     *
-     * 쿠폰 ID가 제공된 경우, 쿠폰의 유효성을 검증하고 할인 금액을 계산합니다.
-     * 쿠폰이 없는 경우 할인 금액 0으로 반환합니다.
-     *
-     * @param userCouponId 사용자 쿠폰 ID (null 가능)
-     * @param userId 사용자 ID
-     * @param totalAmount 총 주문 금액
-     * @return 쿠폰 정보와 할인 금액을 포함한 결과 객체
-     * @throws com.sparta.ecommerce.domain.coupon.exception.CouponException 쿠폰이 유효하지 않은 경우
+     * 쿠폰 검증 및 할인 금액을 계산합니다.
      */
     private CouponDiscountResult processCouponDiscount(Long userCouponId, Long userId, int totalAmount) {
         if (userCouponId == null) {
@@ -176,20 +202,13 @@ public class CreateOrderUseCase {
         UserCouponService.ValidatedCoupon validatedCoupon =
                 userCouponService.validateAndGetCoupon(userCouponId, userId);
 
-        UserCoupon userCoupon = validatedCoupon.userCoupon();
-        Coupon coupon = validatedCoupon.coupon();
+        int discountAmount = validatedCoupon.coupon().calculateDiscount(totalAmount);
 
-        int discountAmount = coupon.calculateDiscount(totalAmount);
-
-        return new CouponDiscountResult(userCoupon, discountAmount);
+        return new CouponDiscountResult(validatedCoupon.userCoupon(), discountAmount);
     }
 
     /**
-     * 장바구니 상품들의 총액 계산
-     *
-     * @param cartItems 장바구니 아이템들
-     * @param productMap 상품 정보 맵
-     * @return 총액
+     * 장바구니 총 금액을 계산합니다.
      */
     private int calculateTotalAmount(List<CartItemResponse> cartItems, Map<Long, Product> productMap) {
         return cartItems.stream()
@@ -201,22 +220,14 @@ public class CreateOrderUseCase {
     }
 
     /**
-     * 최종 결제 금액 계산 (총액 - 할인액)
-     *
-     * @param totalAmount 총액
-     * @param discountAmount 할인액
-     * @return 최종 결제 금액
+     * 최종 결제 금액을 계산합니다 (총액 - 할인액, 최소 0원).
      */
     private int calculateFinalAmount(int totalAmount, int discountAmount) {
-        int finalAmount = totalAmount - discountAmount;
-        return Math.max(finalAmount, 0);  // 최소 0원
+        return Math.max(totalAmount - discountAmount, 0);
     }
 
     /**
-     * 쿠폰 할인 처리 결과를 담는 불변 객체
-     *
-     * @param userCoupon 사용된 사용자 쿠폰 (null 가능)
-     * @param discountAmount 할인 금액
+     * 쿠폰 할인 처리 결과
      */
     private record CouponDiscountResult(UserCoupon userCoupon, int discountAmount) {
     }

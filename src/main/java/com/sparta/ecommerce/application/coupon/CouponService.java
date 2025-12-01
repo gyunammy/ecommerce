@@ -20,10 +20,10 @@ public class CouponService {
      * @return 조회된 쿠폰
      * @throws CouponException 쿠폰을 찾을 수 없을 경우
      */
-    public Coupon getCouponForUpdate(Long couponId) {
-        return couponRepository.findByIdWithPessimisticLock(couponId)
-                .orElseThrow(() -> new CouponException(CouponErrorCode.COUPON_NOT_FOUND));
-    }
+//    public Coupon getCouponForUpdate(Long couponId) {
+//        return couponRepository.findByIdWithPessimisticLock(couponId)
+//                .orElseThrow(() -> new CouponException(CouponErrorCode.COUPON_NOT_FOUND));
+//    }
 
     /**
      * 쿠폰 저장
@@ -32,5 +32,10 @@ public class CouponService {
      */
     public Coupon saveCoupon(Coupon coupon) {
         return couponRepository.save(coupon);
+    }
+
+    public Coupon getCouponById(Long couponId) {
+        return couponRepository.findById(couponId)
+                .orElseThrow(() -> new CouponException(CouponErrorCode.COUPON_NOT_FOUND));
     }
 }

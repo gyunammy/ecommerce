@@ -27,20 +27,23 @@ public interface JpaOrderItemRepository extends JpaRepository<OrderItem, Long> {
     }
 
     @Query("""
-            SELECT p.productId as productId,
-                   p.productName as productName,
-                   p.description as description,
-                   p.quantity as quantity,
-                   p.price as price,
-                   p.viewCount as viewCount,
-                   p.createdAt as createdAt,
-                   p.updateAt as updateAt,
-                   SUM(oi.quantity) as soldCount
-            FROM OrderItem oi
-            JOIN Product p ON oi.productId = p.productId
-            GROUP BY p.productId, p.productName, p.description, p.quantity, p.price, p.viewCount, p.createdAt, p.updateAt
-            ORDER BY soldCount DESC
-            LIMIT :limit
+                SELECT
+                    p.productId,
+                    p.productName,
+                    p.description,
+                    p.quantity,
+                    p.price,
+                    p.viewCount,
+                    p.createdAt,
+                    p.updateAt,
+                    SUM(oi.quantity) AS soldCount
+                FROM OrderItem oi
+                JOIN `Order` o ON oi.orderId = o.orderId
+                JOIN Product p ON oi.productId = p.productId
+                WHERE o.status = 'COMPLETED'
+                GROUP BY p.productId
+                ORDER BY soldCount DESC
+                LIMIT :limit
             """)
     List<ProductWithSoldCount> findTopProductsWithSoldCount(@Param("limit") int limit);
 
