@@ -4,6 +4,7 @@ import com.sparta.ecommerce.application.cart.CartService;
 import com.sparta.ecommerce.application.coupon.UserCouponService;
 import com.sparta.ecommerce.application.product.ProductService;
 import com.sparta.ecommerce.application.user.UserService;
+import com.sparta.ecommerce.common.transaction.TransactionHandler;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
@@ -64,6 +65,9 @@ class CreateOrderUseCaseTest {
     @Mock
     private RLock rLock;
 
+    @Mock
+    private TransactionHandler transactionHandler;
+
     @InjectMocks
     private CreateOrderUseCase createOrderUseCase;
 
@@ -75,8 +79,12 @@ class CreateOrderUseCaseTest {
         org.mockito.Mockito.lenient().when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
         org.mockito.Mockito.lenient().when(rLock.isHeldByCurrentThread()).thenReturn(true);
 
-        // Self 주입 설정: self가 실제 createOrderUseCase를 가리키도록 설정
-        ReflectionTestUtils.setField(createOrderUseCase, "self", createOrderUseCase);
+        // TransactionHandler 모킹 설정: execute 메서드가 전달받은 Runnable을 실행하도록 설정
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(transactionHandler).execute(any(Runnable.class));
     }
 
     @Test
