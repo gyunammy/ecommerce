@@ -9,6 +9,7 @@ import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
 import com.sparta.ecommerce.domain.order.entity.Order;
+import com.sparta.ecommerce.domain.product.ProductRankingRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.product.exception.ProductException;
 import com.sparta.ecommerce.domain.user.entity.User;
@@ -67,6 +68,9 @@ class CreateOrderUseCaseTest {
 
     @Mock
     private TransactionHandler transactionHandler;
+
+    @Mock
+    private ProductRankingRepository productRankingRepository;
 
     @InjectMocks
     private CreateOrderUseCase createOrderUseCase;

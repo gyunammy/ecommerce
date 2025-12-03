@@ -8,14 +8,17 @@ import com.sparta.ecommerce.common.transaction.TransactionHandler;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.cart.exception.CartException;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
+import com.sparta.ecommerce.domain.product.ProductRankingRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
+import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_EMPTY;
@@ -46,6 +49,7 @@ public class CreateOrderUseCase {
     private final ProductService productService;
     private final RedissonClient redissonClient;
     private final TransactionHandler transactionHandler;
+    private final ProductRankingRepository productRankingRepository;
 
     public CreateOrderUseCase(
             CartService cartService,
@@ -54,7 +58,8 @@ public class CreateOrderUseCase {
             OrderService orderService,
             ProductService productService,
             RedissonClient redissonClient,
-            TransactionHandler transactionHandler
+            TransactionHandler transactionHandler,
+            ProductRankingRepository productRankingRepository
     ) {
         this.cartService = cartService;
         this.userService = userService;
@@ -63,6 +68,7 @@ public class CreateOrderUseCase {
         this.productService = productService;
         this.redissonClient = redissonClient;
         this.transactionHandler = transactionHandler;
+        this.productRankingRepository = productRankingRepository;
     }
 
     /**
@@ -103,6 +109,11 @@ public class CreateOrderUseCase {
             // TransactionHandler를 통해 트랜잭션 제어
             transactionHandler.execute(() ->
                     executeOrderTransaction(user, userCouponId, findCartItems, productIds)
+            );
+
+            // 비동기로 랭킹 업데이트
+            CompletableFuture.runAsync(() ->
+                    updateProductSalesRanking(findCartItems)
             );
 
         } catch (InterruptedException e) {
@@ -162,6 +173,20 @@ public class CreateOrderUseCase {
         );
 
         cartService.clearCart(user.getUserId());
+    }
+
+    /**
+     * 판매량 랭킹을 업데이트합니다.
+     *
+     * Redis Sorted Set에 상품별 판매량을 증가시킵니다.
+     */
+    private void updateProductSalesRanking(List<CartItemResponse> cartItems) {
+        for (CartItemResponse cartItem : cartItems) {
+            productRankingRepository.incrementSalesCount(
+                    cartItem.productId(),
+                    cartItem.quantity()
+            );
+        }
     }
 
     /**
