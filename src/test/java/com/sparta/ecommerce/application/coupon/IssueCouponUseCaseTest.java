@@ -12,6 +12,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.RedisTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -19,9 +21,9 @@ import java.util.Optional;
 import static com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class IssueCouponUseCaseTest {
@@ -38,11 +40,17 @@ class IssueCouponUseCaseTest {
     @Mock
     private UserCouponService userCouponService;
 
+    @Mock
+    private RedisTemplate<String, String> redisTemplate;
+
+    @Mock
+    private ListOperations<String, String> listOperations;
+
     @InjectMocks
     private IssueCouponUseCase issueCouponUseCase;
 
     @Test
-    @DisplayName("쿠폰 발급 성공")
+    @DisplayName("쿠폰 발급 요청 성공 - Queue에 추가")
     void issueCoupon_success() {
         // given
         Long userId = 1L;
@@ -60,32 +68,29 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now(),
                 LocalDateTime.now().plusDays(30)
         );
-        UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
+        given(couponService.getCouponById(couponId)).willReturn(coupon);
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(false);
-        given(userCouponService.issueCoupon(userId, couponId)).willReturn(userCoupon);
+        given(redisTemplate.opsForList()).willReturn(listOperations);
 
         // when
         issueCouponUseCase.issueCoupon(userId, couponId);
 
         // then
         verify(userService).getUserById(userId);
-        verify(couponRepository).findById(couponId);
+        verify(couponService).getCouponById(couponId);
         verify(userCouponService).hasCoupon(userId, couponId);
-        verify(userCouponService).issueCoupon(userId, couponId);
-        verify(couponService).saveCoupon(coupon);
+        verify(listOperations).leftPush(anyString(), eq("1:1"));
     }
 
     @Test
     @DisplayName("만료된 쿠폰 발급 시도 시 예외 발생")
-    void issueCoupon_expired() {
+    void executeIssueCoupon_expired() {
         // given
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon expiredCoupon = new Coupon(
                 couponId,
                 "만료된 쿠폰",
@@ -98,11 +103,10 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now().minusDays(30)  // 만료됨
         );
 
-        given(userService.getUserById(userId)).willReturn(user);
         given(couponRepository.findById(couponId)).willReturn(Optional.of(expiredCoupon));
 
         // when & then
-        assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
+        assertThatThrownBy(() -> issueCouponUseCase.executeIssueCoupon(userId, couponId))
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining(COUPON_EXPIRED.getMessage());
 
@@ -111,12 +115,11 @@ class IssueCouponUseCaseTest {
 
     @Test
     @DisplayName("재고가 없는 쿠폰 발급 시도 시 예외 발생")
-    void issueCoupon_outOfStock() {
+    void executeIssueCoupon_outOfStock() {
         // given
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon outOfStockCoupon = new Coupon(
                 couponId,
                 "품절된 쿠폰",
@@ -129,11 +132,10 @@ class IssueCouponUseCaseTest {
                 LocalDateTime.now().plusDays(30)
         );
 
-        given(userService.getUserById(userId)).willReturn(user);
         given(couponRepository.findById(couponId)).willReturn(Optional.of(outOfStockCoupon));
 
         // when & then
-        assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
+        assertThatThrownBy(() -> issueCouponUseCase.executeIssueCoupon(userId, couponId))
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining(COUPON_OUT_OF_STOCK.getMessage());
 
@@ -141,7 +143,7 @@ class IssueCouponUseCaseTest {
     }
 
     @Test
-    @DisplayName("이미 발급받은 쿠폰 재발급 시도 시 예외 발생")
+    @DisplayName("이미 발급받은 쿠폰 재발급 요청 시 예외 발생")
     void issueCoupon_alreadyIssued() {
         // given
         Long userId = 1L;
@@ -161,11 +163,41 @@ class IssueCouponUseCaseTest {
         );
 
         given(userService.getUserById(userId)).willReturn(user);
-        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
+        given(couponService.getCouponById(couponId)).willReturn(coupon);
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(true);  // 이미 보유
 
         // when & then
         assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
+                .isInstanceOf(CouponException.class)
+                .hasMessageContaining(COUPON_ALREADY_ISSUED.getMessage());
+
+        verify(listOperations, never()).leftPush(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("이미 발급받은 쿠폰 실제 발급 시도 시 예외 발생")
+    void executeIssueCoupon_alreadyIssued() {
+        // given
+        Long userId = 1L;
+        Long couponId = 1L;
+
+        Coupon coupon = new Coupon(
+                couponId,
+                "10% 할인 쿠폰",
+                "RATE",
+                10,
+                100,
+                50,
+                0,
+                LocalDateTime.now(),
+                LocalDateTime.now().plusDays(30)
+        );
+
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
+        given(userCouponService.hasCoupon(userId, couponId)).willReturn(true);  // 이미 보유
+
+        // when & then
+        assertThatThrownBy(() -> issueCouponUseCase.executeIssueCoupon(userId, couponId))
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining(COUPON_ALREADY_ISSUED.getMessage());
 
@@ -174,13 +206,12 @@ class IssueCouponUseCaseTest {
     }
 
     @Test
-    @DisplayName("쿠폰 발급 시 발급 수량 증가 확인")
-    void issueCoupon_increaseIssuedQuantity() {
+    @DisplayName("쿠폰 실제 발급 시 발급 수량 증가 확인")
+    void executeIssueCoupon_increaseIssuedQuantity() {
         // given
         Long userId = 1L;
         Long couponId = 1L;
 
-        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
         Coupon coupon = new Coupon(
                 couponId,
                 "10% 할인 쿠폰",
@@ -194,13 +225,12 @@ class IssueCouponUseCaseTest {
         );
         UserCoupon userCoupon = new UserCoupon(1L, userId, couponId, false, 0L, LocalDateTime.now(), null);
 
-        given(userService.getUserById(userId)).willReturn(user);
         given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(false);
         given(userCouponService.issueCoupon(userId, couponId)).willReturn(userCoupon);
 
         // when
-        issueCouponUseCase.issueCoupon(userId, couponId);
+        issueCouponUseCase.executeIssueCoupon(userId, couponId);
 
         // then
         // saveCoupon이 호출되어 발급 수량이 증가한 쿠폰이 저장됨

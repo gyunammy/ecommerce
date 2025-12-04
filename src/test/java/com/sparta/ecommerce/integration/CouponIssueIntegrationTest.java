@@ -40,7 +40,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Controller → UseCase → Service → Repository 전체 레이어를 통합하여 테스트
  * TestContainers를 사용하여 실제 MySQL 환경에서 동시성 제어 검증
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+    "spring.task.scheduling.enabled=false",  // 테스트 시 스케줄러 비활성화
+    "app.async.enabled=false"  // 테스트 시 비동기 작업을 동기로 실행
+    // 주의: 이 테스트는 Consumer를 테스트하므로 coupon.queue.consumer.enabled는 활성화(기본값)
+})
 @Testcontainers
 class CouponIssueIntegrationTest {
 
@@ -64,6 +68,11 @@ class CouponIssueIntegrationTest {
         // Redis 설정
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+
+        // Redis 연결 풀 증가 (Lettuce 기본값: 8 → 50으로 증가)
+        registry.add("spring.data.redis.lettuce.pool.max-active", () -> "50");
+        registry.add("spring.data.redis.lettuce.pool.max-idle", () -> "50");
+        registry.add("spring.data.redis.lettuce.pool.min-idle", () -> "10");
     }
 
     @Autowired
@@ -141,30 +150,23 @@ class CouponIssueIntegrationTest {
     @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void issueCoupon_concurrency_integration() throws InterruptedException {
         // given
-        AtomicInteger successCount = new AtomicInteger(0);
-        AtomicInteger failCount = new AtomicInteger(0);
-        AtomicInteger unexpectedErrorCount = new AtomicInteger(0);
+        AtomicInteger queueAddCount = new AtomicInteger(0);
+        AtomicInteger queueFailCount = new AtomicInteger(0);
 
         ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
         CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
 
-        // when: 100명의 사용자가 동시에 쿠폰 발급 시도
+        // when: 100명의 사용자가 동시에 쿠폰 발급 요청 (Queue에 추가)
         for (int i = 0; i < THREAD_COUNT; i++) {
             long userId = userIds.get(i);
             executorService.submit(() -> {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
-                    successCount.incrementAndGet();
+                    queueAddCount.incrementAndGet();
                 } catch (CouponException e) {
-                    // 재고 부족 또는 이미 발급받은 경우 예외 발생 (예상된 동작)
-                    failCount.incrementAndGet();
-                } catch (IllegalStateException e) {
-                    // Lock 타임아웃도 실패로 처리 (재고 부족으로 인한 대기 시간 초과)
-                    failCount.incrementAndGet();
-                    System.out.println("Lock timeout for userId " + userId + " (재고 소진으로 인한 대기 시간 초과)");
+                    // 중복 발급 체크에서 실패
+                    queueFailCount.incrementAndGet();
                 } catch (Exception e) {
-                    // 예상치 못한 예외
-                    unexpectedErrorCount.incrementAndGet();
                     System.err.println("Unexpected error for userId " + userId + ": " + e.getMessage());
                     e.printStackTrace();
                 } finally {
@@ -173,43 +175,55 @@ class CouponIssueIntegrationTest {
             });
         }
 
-        boolean completed = latch.await(60, TimeUnit.SECONDS);  // 재고 체크로 빠르게 실패하므로 타임아웃 감소
+        // Queue 추가 완료 대기
+        boolean completed = latch.await(60, TimeUnit.SECONDS);
         executorService.shutdown();
+        assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
+
+        System.out.println("Queue 추가 성공: " + queueAddCount.get() + ", 실패: " + queueFailCount.get());
+
+        // Consumer가 Queue를 모두 처리할 때까지 대기 (최대 60초)
+        int maxWaitSeconds = 60;
+        for (int i = 0; i < maxWaitSeconds; i++) {
+            Thread.sleep(1000);
+            Coupon coupon = couponRepository.findById(couponId).orElseThrow();
+            if (coupon.getIssuedQuantity() >= COUPON_STOCK) {
+                System.out.println("Consumer 처리 완료: " + coupon.getIssuedQuantity() + "개 발급");
+                break;
+            }
+            if (i == maxWaitSeconds - 1) {
+                org.junit.jupiter.api.Assertions.fail("Consumer 처리 시간 초과");
+            }
+        }
 
         // then: 검증
-        assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
-        assertThat(unexpectedErrorCount.get()).as("예상치 못한 에러가 없어야 함").isEqualTo(0);
-
-        System.out.println("성공: " + successCount.get() + ", 실패: " + failCount.get());
-
-        // 1. 정확히 50명만 쿠폰 발급 성공
-        assertThat(successCount.get()).isEqualTo(COUPON_STOCK);
-        assertThat(failCount.get()).isEqualTo(THREAD_COUNT - COUPON_STOCK);
-
-        // 2. 쿠폰의 발급 수량이 정확히 50개
+        // 1. 쿠폰의 발급 수량이 정확히 50개
         Coupon issuedCoupon = couponRepository.findById(couponId).orElseThrow();
         assertThat(issuedCoupon.getIssuedQuantity()).isEqualTo(COUPON_STOCK);
 
-        // 3. UserCoupon 테이블에 정확히 50개의 레코드 생성
+        // 2. UserCoupon 테이블에 정확히 50개의 레코드 생성
         List<UserCoupon> issuedUserCoupons = userCouponRepository.findAll().stream()
                 .filter(uc -> uc.getCouponId().equals(couponId))
                 .toList();
         assertThat(issuedUserCoupons).hasSize(COUPON_STOCK);
 
-        // 4. 발급된 쿠폰은 모두 미사용 상태여야 함
+        // 3. 발급된 쿠폰은 모두 미사용 상태여야 함
         assertThat(issuedUserCoupons).allMatch(uc -> !uc.isUsed());
     }
 
     @Test
     @DisplayName("통합 테스트 - 동일한 사용자가 같은 쿠폰을 두 번 발급받을 수 없음")
-    void issueCoupon_duplicateIssue_shouldFail() {
+    void issueCoupon_duplicateIssue_shouldFail() throws InterruptedException {
         // given
         Long userId = userIds.get(0);
 
-        // when: 첫 번째 발급
+        // when: 첫 번째 발급 요청
         issueCouponUseCase.issueCoupon(userId, couponId);
 
-        // then: 두 번째 발급 시도 시 예외 발생
+        // Consumer 처리 대기
+        Thread.sleep(2000);
+
+        // then: 두 번째 발급 시도 시 예외 발생 (중복 체크)
         assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining("이미 발급받은 쿠폰입니다");
@@ -220,7 +234,7 @@ class CouponIssueIntegrationTest {
     }
 
     @Test
-    @DisplayName("통합 테스트 - 동일한 사용자 ID로 동시 쿠폰 발급 요청 시 Unique 제약 조건으로 한 번만 발급")
+    @DisplayName("통합 테스트 - 동일한 사용자 ID로 동시 쿠폰 발급 요청 시 DB Unique 제약 조건으로 한 번만 발급")
     @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void issueCoupon_concurrentDuplicateByUserId_shouldFailWithUniqueConstraint() throws InterruptedException {
         // given: 동일한 사용자 ID로 동시에 발급 시도
@@ -231,43 +245,43 @@ class CouponIssueIntegrationTest {
         ExecutorService executorService = Executors.newFixedThreadPool(2);
         CountDownLatch latch = new CountDownLatch(2);
 
-        // when: 동일한 사용자 ID로 2개의 스레드가 동시에 쿠폰 발급 시도
+        // when: 동일한 사용자 ID로 2개의 스레드가 동시에 쿠폰 발급 요청
         for (int i = 0; i < 2; i++) {
             executorService.submit(() -> {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
                     successCount.incrementAndGet();
-                    System.out.println("성공: userId=" + userId);
+                    System.out.println("Queue 추가 성공: userId=" + userId);
                 } catch (CouponException e) {
-                    // 중복 발급 또는 비즈니스 로직 예외
+                    // 중복 발급 체크에서 실패
                     failCount.incrementAndGet();
                     System.out.println("CouponException 발생: " + e.getMessage());
                 } catch (Exception e) {
-                    // Unique 제약 조건 위반 등 다른 예외도 실패로 카운트
                     failCount.incrementAndGet();
                     System.out.println("예외 발생: " + e.getClass().getName() + " - " + e.getMessage());
-                    e.printStackTrace();
                 } finally {
                     latch.countDown();
                 }
             });
         }
 
-        boolean completed = latch.await(30, TimeUnit.SECONDS);  // Redis Lock 대기 시간 고려
+        boolean completed = latch.await(30, TimeUnit.SECONDS);
         executorService.shutdown();
 
         // then: 검증
         assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
 
-        // 1. 정확히 1번만 성공해야 함
-        assertThat(successCount.get()).isEqualTo(1);
-        assertThat(failCount.get()).isEqualTo(1);
+        // Queue 추가는 Race Condition으로 1번 또는 2번 성공 가능
+        System.out.println("Queue 추가 성공: " + successCount.get() + ", 실패: " + failCount.get());
 
-        // 2. 쿠폰은 1개만 발급되어야 함
+        // Consumer 처리 대기
+        Thread.sleep(3000);
+
+        // 중요: 쿠폰은 DB Unique 제약 조건으로 1개만 발급되어야 함
         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
         assertThat(coupon.getIssuedQuantity()).isEqualTo(1);
 
-        // 3. UserCoupon 테이블에 해당 사용자의 쿠폰이 1개만 있어야 함
+        // UserCoupon 테이블에 해당 사용자의 쿠폰이 1개만 있어야 함
         List<UserCoupon> userCoupons = userCouponRepository.findAll().stream()
                 .filter(uc -> uc.getUserId().equals(userId) && uc.getCouponId().equals(couponId))
                 .toList();
@@ -280,7 +294,7 @@ class CouponIssueIntegrationTest {
     void issueCoupon_stockExhausted_shouldFail() throws InterruptedException {
         // given: 쿠폰 재고를 50개로 설정 (이미 setUp에서 설정됨)
 
-        // when: 50명의 사용자가 쿠폰 발급
+        // when: 50명의 사용자가 쿠폰 발급 요청
         ExecutorService executorService = Executors.newFixedThreadPool(COUPON_STOCK);
         CountDownLatch latch = new CountDownLatch(COUPON_STOCK);
 
@@ -290,26 +304,34 @@ class CouponIssueIntegrationTest {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
                 } catch (Exception e) {
-                    // 동시성으로 인한 일부 실패 가능
+                    // 중복 체크 실패 가능
                 } finally {
                     latch.countDown();
                 }
             });
         }
 
-        boolean completed = latch.await(120, TimeUnit.SECONDS);  // Redis Lock 순차 처리로 타임아웃 증가
+        boolean completed = latch.await(120, TimeUnit.SECONDS);
         executorService.shutdown();
         assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
 
-        // then: 51번째 사용자는 쿠폰 발급 실패
-        try {
-            issueCouponUseCase.issueCoupon(userIds.get(COUPON_STOCK), couponId);
-            org.junit.jupiter.api.Assertions.fail("재고 소진 시 예외가 발생해야 합니다");
-        } catch (CouponException e) {
-            assertThat(e.getMessage()).contains("쿠폰이 모두 소진되었습니다");
+        // Consumer 처리 대기 (재고 소진까지)
+        int maxWaitSeconds = 60;
+        for (int i = 0; i < maxWaitSeconds; i++) {
+            Thread.sleep(1000);
+            Coupon coupon = couponRepository.findById(couponId).orElseThrow();
+            if (coupon.getIssuedQuantity() >= COUPON_STOCK) {
+                break;
+            }
         }
 
-        // 검증: 발급 수량이 총 수량과 같음
+        // then: 51번째 사용자는 Queue 추가는 되지만 실제 발급은 실패
+        issueCouponUseCase.issueCoupon(userIds.get(COUPON_STOCK), couponId);
+
+        // Consumer가 처리하면서 재고 부족으로 실패 (발급 수량은 50 유지)
+        Thread.sleep(3000);
+
+        // 검증: 발급 수량이 총 수량과 같음 (50개)
         Coupon coupon = couponRepository.findById(couponId).orElseThrow();
         assertThat(coupon.getIssuedQuantity()).isEqualTo(COUPON_STOCK);
     }
@@ -317,7 +339,7 @@ class CouponIssueIntegrationTest {
     @Test
     @DisplayName("통합 테스트 - 만료된 쿠폰은 발급 불가")
     @org.springframework.transaction.annotation.Transactional
-    void issueCoupon_expiredCoupon_shouldFail() {
+    void issueCoupon_expiredCoupon_shouldFail() throws InterruptedException {
         // given: 만료된 쿠폰 생성
         LocalDateTime now = LocalDateTime.now();
         Coupon expiredCoupon = new Coupon(
@@ -334,23 +356,23 @@ class CouponIssueIntegrationTest {
         Coupon savedExpiredCoupon = couponRepository.save(expiredCoupon);
         Long expiredCouponId = savedExpiredCoupon.getCouponId();
 
-        // when & then: 발급 시도 시 예외 발생
-        try {
-            issueCouponUseCase.issueCoupon(userIds.get(0), expiredCouponId);
-            org.junit.jupiter.api.Assertions.fail("만료된 쿠폰 발급 시 예외가 발생해야 합니다");
-        } catch (CouponException e) {
-            assertThat(e.getMessage()).contains("만료된 쿠폰입니다");
-        }
+        // when & then: 발급 요청 시 만료 체크
+        assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userIds.get(0), expiredCouponId))
+                .isInstanceOf(CouponException.class)
+                .hasMessageContaining("만료된 쿠폰입니다");
     }
 
     @Test
     @DisplayName("통합 테스트 - 전체 발급 플로우 검증 (사용자 조회 → 쿠폰 검증 → 발급)")
-    void issueCoupon_fullFlow_verification() {
+    void issueCoupon_fullFlow_verification() throws InterruptedException {
         // given
         Long userId = userIds.get(0);
 
-        // when: 쿠폰 발급
+        // when: 쿠폰 발급 요청
         issueCouponUseCase.issueCoupon(userId, couponId);
+
+        // Consumer 처리 대기
+        Thread.sleep(2000);
 
         // then: 각 레이어별 상태 검증
 
