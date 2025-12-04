@@ -31,7 +31,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * Redis를 사용한 판매량 랭킹 집계 및 조회를 검증합니다.
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+    "spring.task.scheduling.enabled=false",  // 테스트 시 스케줄러 비활성화
+    "app.async.enabled=false",  // 테스트 시 비동기 작업을 동기로 실행
+    "coupon.queue.consumer.enabled=false"  // 쿠폰 발급 Queue Consumer 비활성화
+})
 @Testcontainers
 @org.springframework.transaction.annotation.Transactional
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -54,6 +58,11 @@ class ProductRankingIntegrationTest {
         registry.add("spring.datasource.password", mysql::getPassword);
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+
+        // Redis 연결 풀 증가
+        registry.add("spring.data.redis.lettuce.pool.max-active", () -> "50");
+        registry.add("spring.data.redis.lettuce.pool.max-idle", () -> "50");
+        registry.add("spring.data.redis.lettuce.pool.min-idle", () -> "10");
     }
 
     @Autowired

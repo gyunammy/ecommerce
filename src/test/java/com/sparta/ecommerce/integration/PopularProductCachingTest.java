@@ -29,7 +29,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * Redis 캐시를 사용한 성능 개선을 검증
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+    "spring.task.scheduling.enabled=false",  // 테스트 시 스케줄러 비활성화
+    "coupon.queue.consumer.enabled=false",  // 쿠폰 발급 Queue Consumer 비활성화
+    "app.async.enabled=false"  // 테스트 시 비동기 작업을 동기로 실행
+})
 @Testcontainers
 public class PopularProductCachingTest {
 

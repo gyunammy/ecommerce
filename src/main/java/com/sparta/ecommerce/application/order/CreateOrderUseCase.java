@@ -14,6 +14,7 @@ import com.sparta.ecommerce.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -50,6 +51,7 @@ public class CreateOrderUseCase {
     private final RedissonClient redissonClient;
     private final TransactionHandler transactionHandler;
     private final ProductRankingRepository productRankingRepository;
+    private final TaskExecutor taskExecutor;
 
     public CreateOrderUseCase(
             CartService cartService,
@@ -59,7 +61,8 @@ public class CreateOrderUseCase {
             ProductService productService,
             RedissonClient redissonClient,
             TransactionHandler transactionHandler,
-            ProductRankingRepository productRankingRepository
+            ProductRankingRepository productRankingRepository,
+            TaskExecutor taskExecutor
     ) {
         this.cartService = cartService;
         this.userService = userService;
@@ -69,6 +72,7 @@ public class CreateOrderUseCase {
         this.redissonClient = redissonClient;
         this.transactionHandler = transactionHandler;
         this.productRankingRepository = productRankingRepository;
+        this.taskExecutor = taskExecutor;
     }
 
     /**
@@ -111,8 +115,8 @@ public class CreateOrderUseCase {
                     executeOrderTransaction(user, userCouponId, findCartItems, productIds)
             );
 
-            // 비동기로 랭킹 업데이트
-            CompletableFuture.runAsync(() ->
+            // TaskExecutor를 통해 랭킹 업데이트 (테스트 환경에서는 동기 실행 가능)
+            taskExecutor.execute(() ->
                     updateProductSalesRanking(findCartItems)
             );
 
