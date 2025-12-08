@@ -4,6 +4,7 @@ import com.sparta.ecommerce.application.product.GetTopProductsUseCase;
 import com.sparta.ecommerce.domain.product.ProductSortType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,8 +23,9 @@ public class PopularProductCacheScheduler {
     /**
      * 매일 00시에 인기 상품 캐시 워밍 실행
      *
-     * 조회수 기준과 판매량 기준 모두 캐시에 적재
+     * 기존 캐시를 모두 삭제한 후, 조회수 기준과 판매량 기준 모두 캐시에 적재
      */
+    @CacheEvict(value = "topProducts", allEntries = true)
     @Scheduled(cron = "0 0 0 * * *")
     public void warmUpPopularProductsCache() {
         log.info("========== 인기 상품 캐시 워밍 시작 ==========");

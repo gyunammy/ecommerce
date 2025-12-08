@@ -52,7 +52,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 참고: 각 테스트는 독립적으로 실행되며, BeforeEach에서 Repository를 초기화하지 않으므로
  * 테스트 간에 데이터가 공유될 수 있습니다. 이는 실제 운영 환경을 시뮬레이션하기 위함입니다.
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+    "spring.task.scheduling.enabled=false",  // 테스트 시 스케줄러 비활성화
+    "coupon.queue.consumer.enabled=false",   // 쿠폰 발급 Queue Consumer 비활성화
+    "app.async.enabled=false"  // 테스트 시 비동기 작업을 동기로 실행
+})
 @Testcontainers
 @org.springframework.transaction.annotation.Transactional
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)

@@ -4,19 +4,22 @@ import com.sparta.ecommerce.application.cart.CartService;
 import com.sparta.ecommerce.application.coupon.UserCouponService;
 import com.sparta.ecommerce.application.product.ProductService;
 import com.sparta.ecommerce.application.user.UserService;
+import com.sparta.ecommerce.common.transaction.TransactionHandler;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.cart.exception.CartException;
 import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
+import com.sparta.ecommerce.domain.product.ProductRankingRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
+import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_EMPTY;
@@ -25,17 +28,17 @@ import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_E
  * 주문 생성 유스케이스
  *
  * 장바구니 상품을 기반으로 주문을 생성합니다.
- * Redis MultiLock과 @Transactional을 조합하여 동시성 제어 및 원자성을 보장합니다.
+ * Redis MultiLock과 TransactionHandler를 조합하여 동시성 제어 및 원자성을 보장합니다.
  *
  * 동시성 제어 전략:
  *   1. Redis MultiLock 획득 (트랜잭션 밖) - DB 커넥션 고갈 방지
- *   2. 트랜잭션 시작 (락 안)
+ *   2. 트랜잭션 시작 (락 안) - TransactionHandler를 통해 제어
  *   3. 상품 조회 + 검증 + 상태 변경 (트랜잭션 안, 락 안) - TOCTOU 방지
  *   4. 트랜잭션 커밋
  *   5. 락 해제
  *
- * Self 주입 패턴:
- *   내부 메서드의 @Transactional이 동작하도록 self를 통해 프록시 호출
+ * 트랜잭션 제어:
+ *   TransactionHandler를 통해 기술(트랜잭션)과 도메인 로직을 분리합니다.
  */
 @Service
 public class CreateOrderUseCase {
@@ -46,11 +49,10 @@ public class CreateOrderUseCase {
     private final OrderService orderService;
     private final ProductService productService;
     private final RedissonClient redissonClient;
+    private final TransactionHandler transactionHandler;
+    private final ProductRankingRepository productRankingRepository;
+    private final TaskExecutor taskExecutor;
 
-    // Self 주입: @Transactional이 동작하도록 프록시를 통해 호출
-    private final CreateOrderUseCase self;
-
-    // 생성자 주입 (Self 주입 시 @Lazy 필수)
     public CreateOrderUseCase(
             CartService cartService,
             UserService userService,
@@ -58,7 +60,9 @@ public class CreateOrderUseCase {
             OrderService orderService,
             ProductService productService,
             RedissonClient redissonClient,
-            @Lazy CreateOrderUseCase self  // 순환 참조 방지
+            TransactionHandler transactionHandler,
+            ProductRankingRepository productRankingRepository,
+            TaskExecutor taskExecutor
     ) {
         this.cartService = cartService;
         this.userService = userService;
@@ -66,7 +70,9 @@ public class CreateOrderUseCase {
         this.orderService = orderService;
         this.productService = productService;
         this.redissonClient = redissonClient;
-        this.self = self;
+        this.transactionHandler = transactionHandler;
+        this.productRankingRepository = productRankingRepository;
+        this.taskExecutor = taskExecutor;
     }
 
     /**
@@ -104,8 +110,15 @@ public class CreateOrderUseCase {
                 throw new IllegalStateException("상품 락을 획득할 수 없습니다");
             }
 
-            // Self를 통해 호출하여 프록시를 거쳐 @Transactional 동작
-            self.executeOrderTransaction(user, userCouponId, findCartItems, productIds);
+            // TransactionHandler를 통해 트랜잭션 제어
+            transactionHandler.execute(() ->
+                    executeOrderTransaction(user, userCouponId, findCartItems, productIds)
+            );
+
+            // TaskExecutor를 통해 랭킹 업데이트 (테스트 환경에서는 동기 실행 가능)
+            taskExecutor.execute(() ->
+                    updateProductSalesRanking(findCartItems)
+            );
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -118,21 +131,17 @@ public class CreateOrderUseCase {
     }
 
     /**
-     * 트랜잭션 내에서 주문 생성 로직을 수행합니다.
+     * 주문 생성 로직을 수행합니다.
      *
-     * Redis 락이 획득된 상태에서 호출되며, 상품 조회부터 주문 생성까지 원자적으로 처리합니다.
-     *
-     * 주의: Self 주입 패턴 사용
-     * - 반드시 self.executeOrderTransaction()으로 호출해야 @Transactional이 동작합니다.
-     * - this.executeOrderTransaction()으로 호출하면 트랜잭션이 적용되지 않습니다.
+     * Redis 락이 획득된 상태에서 TransactionHandler를 통해 트랜잭션 내에서 호출됩니다.
+     * 상품 조회부터 주문 생성까지 원자적으로 처리합니다.
      *
      * @param user 사용자
      * @param userCouponId 사용할 쿠폰 ID (null 가능)
      * @param findCartItems 장바구니 상품 목록
      * @param productIds 정렬된 상품 ID 목록
      */
-    @Transactional
-    public void executeOrderTransaction(
+    private void executeOrderTransaction(
             User user,
             Long userCouponId,
             List<CartItemResponse> findCartItems,
@@ -168,6 +177,20 @@ public class CreateOrderUseCase {
         );
 
         cartService.clearCart(user.getUserId());
+    }
+
+    /**
+     * 판매량 랭킹을 업데이트합니다.
+     *
+     * Redis Sorted Set에 상품별 판매량을 증가시킵니다.
+     */
+    private void updateProductSalesRanking(List<CartItemResponse> cartItems) {
+        for (CartItemResponse cartItem : cartItems) {
+            productRankingRepository.incrementSalesCount(
+                    cartItem.productId(),
+                    cartItem.quantity()
+            );
+        }
     }
 
     /**
