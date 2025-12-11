@@ -1,5 +1,6 @@
 package com.sparta.ecommerce.application.product;
 
+import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
 import com.sparta.ecommerce.domain.product.ProductRepository;
 import com.sparta.ecommerce.domain.product.entity.Product;
@@ -11,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RedissonClient;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -18,10 +20,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.INSUFFICIENT_STOCK;
 import static com.sparta.ecommerce.domain.product.exception.ProductErrorCode.PRODUCT_NOT_FOUND;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,6 +40,57 @@ class ProductServiceTest {
 
     @InjectMocks
     private ProductService productService;
+
+
+    @Test
+    @DisplayName("calculateTotalAmount - 장바구니 총액 계산 성공")
+    void calculateTotalAmount_success() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.now();
+        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 2, now, now);  // 2개 x 10000원 = 20000원
+        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);  // 3개 x 5000원 = 15000원
+        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
+
+        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);
+        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);
+        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
+
+        // when
+        Integer result = (Integer) ReflectionTestUtils.invokeMethod(
+                productService,
+                "calculateTotalAmount",
+                cartItems,
+                productMap
+        );
+
+        // then
+        assertThat(result).isEqualTo(35000);  // 20000 + 15000
+    }
+
+    @Test
+    @DisplayName("calculateTotalAmount - 단일 상품 총액 계산")
+    void calculateTotalAmount_singleProduct() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.now();
+        CartItemResponse cartItem = new CartItemResponse(1L, 1L, 100L, 5, now, now);  // 5개 x 20000원 = 100000원
+        List<CartItemResponse> cartItems = List.of(cartItem);
+
+        Product product = new Product(100L, "고가상품", "설명", 50, 20000, 30, now, now);
+        Map<Long, Product> productMap = Map.of(100L, product);
+
+        // when
+        Integer result = (Integer) ReflectionTestUtils.invokeMethod(
+                productService,
+                "calculateTotalAmount",
+                cartItems,
+                productMap
+        );
+
+        // then
+        assertThat(result).isEqualTo(100000);
+    }
+
+
 
     @Test
     @DisplayName("모든 상품 조회 성공")
@@ -200,5 +256,111 @@ class ProductServiceTest {
         // then
         assertThat(result).hasSize(1);
         assertThat(result.get(100L)).isEqualTo(product);
+    }
+
+
+    @Test
+    @DisplayName("validateStock - 재고 검증 성공")
+    void validateStock_success() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.now();
+        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 5, now, now);
+        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);
+        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
+
+        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);  // 재고 100개
+        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);  // 재고 200개
+        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
+
+        // when & then - 예외가 발생하지 않아야 함
+        ReflectionTestUtils.invokeMethod(
+                productService,
+                "validateStock",
+                cartItems,
+                productMap
+        );
+    }
+
+    @Test
+    @DisplayName("validateStock - 재고 부족 시 예외 발생")
+    void validateStock_insufficientStock() {
+        // given
+        LocalDateTime now = LocalDateTime.now();
+        CartItemResponse cartItem = new CartItemResponse(1L, 1L, 10L, 50, now, now);  // 50개 주문
+        List<CartItemResponse> cartItems = List.of(cartItem);
+
+        Product product = new Product(10L, "상품1", "설명1", 30, 10000, 50, now, now);  // 재고 30개
+        Map<Long, Product> productMap = Map.of(10L, product);
+
+        // when & then
+        try {
+            ReflectionTestUtils.invokeMethod(
+                    productService,
+                    "validateStock",
+                    cartItems,
+                    productMap
+            );
+            // 예외가 발생하지 않으면 테스트 실패
+            org.junit.jupiter.api.Assertions.fail("ProductException이 발생해야 합니다");
+        } catch (Exception e) {
+            // 리플렉션 예외의 원인을 확인
+            Throwable rootCause = e;
+            while (rootCause.getCause() != null) {
+                rootCause = rootCause.getCause();
+            }
+            assertThat(rootCause).isInstanceOf(ProductException.class);
+            assertThat(rootCause.getMessage()).isEqualTo(INSUFFICIENT_STOCK.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("decreaseStock - 재고 차감 성공")
+    void decreaseStock_success() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.now();
+        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 5, now, now);
+        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);
+        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
+
+        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);
+        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);
+        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
+
+        // when
+        ReflectionTestUtils.invokeMethod(
+                productService,
+                "decreaseStock",
+                cartItems,
+                productMap
+        );
+
+        // then
+        assertThat(product1.getQuantity()).isEqualTo(95);  // 100 - 5
+        assertThat(product2.getQuantity()).isEqualTo(197);  // 200 - 3
+        verify(productRepository, times(2)).save(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("decreaseStock - 단일 상품 재고 차감")
+    void decreaseStock_singleProduct() throws Exception {
+        // given
+        LocalDateTime now = LocalDateTime.now();
+        CartItemResponse cartItem = new CartItemResponse(1L, 1L, 100L, 10, now, now);
+        List<CartItemResponse> cartItems = List.of(cartItem);
+
+        Product product = new Product(100L, "상품", "설명", 50, 10000, 30, now, now);
+        Map<Long, Product> productMap = Map.of(100L, product);
+
+        // when
+        ReflectionTestUtils.invokeMethod(
+                productService,
+                "decreaseStock",
+                cartItems,
+                productMap
+        );
+
+        // then
+        assertThat(product.getQuantity()).isEqualTo(40);  // 50 - 10
+        verify(productRepository, times(1)).save(product);
     }
 }

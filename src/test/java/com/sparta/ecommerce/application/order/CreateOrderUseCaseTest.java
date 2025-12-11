@@ -2,6 +2,7 @@ package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.application.cart.CartService;
 import com.sparta.ecommerce.application.coupon.UserCouponService;
+import com.sparta.ecommerce.application.order.event.OrderCreatedEvent;
 import com.sparta.ecommerce.application.product.ProductService;
 import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.common.transaction.TransactionHandler;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -72,6 +74,9 @@ class CreateOrderUseCaseTest {
     @Mock
     private TaskExecutor taskExecutor;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher applicationEventPublisher;
+
     @InjectMocks
     private CreateOrderUseCase createOrderUseCase;
 
@@ -83,13 +88,6 @@ class CreateOrderUseCaseTest {
         org.mockito.Mockito.lenient().when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
         org.mockito.Mockito.lenient().when(rLock.isHeldByCurrentThread()).thenReturn(true);
 
-        // TransactionHandler 모킹 설정: execute 메서드가 전달받은 Runnable을 실행하도록 설정
-        org.mockito.Mockito.lenient().doAnswer(invocation -> {
-            Runnable action = invocation.getArgument(0);
-            action.run();
-            return null;
-        }).when(transactionHandler).execute(any(Runnable.class));
-
         // TaskExecutor 모킹 설정: execute 메서드가 전달받은 Runnable을 동기로 실행하도록 설정
         org.mockito.Mockito.lenient().doAnswer(invocation -> {
             Runnable action = invocation.getArgument(0);
@@ -99,51 +97,22 @@ class CreateOrderUseCaseTest {
     }
 
     @Test
-    @DisplayName("calculateTotalAmount - 장바구니 총액 계산 성공")
-    void calculateTotalAmount_success() throws Exception {
+    @DisplayName("calculateFinalAmount - 할인이 총액보다 큰 경우 최소 0원 보장")
+    void calculateFinalAmount_discountExceedsTotal() throws Exception {
         // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 2, now, now);  // 2개 x 10000원 = 20000원
-        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);  // 3개 x 5000원 = 15000원
-        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
-
-        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);
-        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);
-        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
+        int totalAmount = 10000;
+        int discountAmount = 15000;
 
         // when
         Integer result = (Integer) ReflectionTestUtils.invokeMethod(
                 createOrderUseCase,
-                "calculateTotalAmount",
-                cartItems,
-                productMap
+                "calculateFinalAmount",
+                totalAmount,
+                discountAmount
         );
 
         // then
-        assertThat(result).isEqualTo(35000);  // 20000 + 15000
-    }
-
-    @Test
-    @DisplayName("calculateTotalAmount - 단일 상품 총액 계산")
-    void calculateTotalAmount_singleProduct() throws Exception {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem = new CartItemResponse(1L, 1L, 100L, 5, now, now);  // 5개 x 20000원 = 100000원
-        List<CartItemResponse> cartItems = List.of(cartItem);
-
-        Product product = new Product(100L, "고가상품", "설명", 50, 20000, 30, now, now);
-        Map<Long, Product> productMap = Map.of(100L, product);
-
-        // when
-        Integer result = (Integer) ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "calculateTotalAmount",
-                cartItems,
-                productMap
-        );
-
-        // then
-        assertThat(result).isEqualTo(100000);
+        assertThat(result).isEqualTo(0);  // 음수가 아닌 0
     }
 
     @Test
@@ -184,315 +153,23 @@ class CreateOrderUseCaseTest {
         assertThat(result).isEqualTo(30000);
     }
 
-    @Test
-    @DisplayName("calculateFinalAmount - 할인이 총액보다 큰 경우 최소 0원 보장")
-    void calculateFinalAmount_discountExceedsTotal() throws Exception {
-        // given
-        int totalAmount = 10000;
-        int discountAmount = 15000;
+    // calculateTotalAmount 메서드는 ProductService로 이동되어 더 이상 CreateOrderUseCase에 존재하지 않음
+    // ProductService의 단위 테스트에서 검증
+    // @Test
+    // @DisplayName("calculateTotalAmount - 여러 상품 다양한 수량 총액 계산")
+    // void calculateTotalAmount_multipleProductsWithVariousQuantities() throws Exception { ... }
 
-        // when
-        Integer result = (Integer) ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "calculateFinalAmount",
-                totalAmount,
-                discountAmount
-        );
+    // validateStock 메서드는 ProductService로 이동되어 더 이상 CreateOrderUseCase에 존재하지 않음
+    // ProductService의 단위 테스트에서 검증
+    // @Test
+    // @DisplayName("validateStock - 여러 상품 중 하나라도 재고 부족시 예외")
+    // void validateStock_oneProductInsufficientStock() { ... }
 
-        // then
-        assertThat(result).isEqualTo(0);  // 음수가 아닌 0
-    }
-
-    @Test
-    @DisplayName("validateStock - 재고 검증 성공")
-    void validateStock_success() throws Exception {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 5, now, now);
-        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);
-        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
-
-        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);  // 재고 100개
-        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);  // 재고 200개
-        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
-
-        // when & then - 예외가 발생하지 않아야 함
-        ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "validateStock",
-                cartItems,
-                productMap
-        );
-    }
-
-    @Test
-    @DisplayName("validateStock - 재고 부족 시 예외 발생")
-    void validateStock_insufficientStock() {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem = new CartItemResponse(1L, 1L, 10L, 50, now, now);  // 50개 주문
-        List<CartItemResponse> cartItems = List.of(cartItem);
-
-        Product product = new Product(10L, "상품1", "설명1", 30, 10000, 50, now, now);  // 재고 30개
-        Map<Long, Product> productMap = Map.of(10L, product);
-
-        // when & then
-        try {
-            ReflectionTestUtils.invokeMethod(
-                    createOrderUseCase,
-                    "validateStock",
-                    cartItems,
-                    productMap
-            );
-            // 예외가 발생하지 않으면 테스트 실패
-            org.junit.jupiter.api.Assertions.fail("ProductException이 발생해야 합니다");
-        } catch (Exception e) {
-            // 리플렉션 예외의 원인을 확인
-            Throwable rootCause = e;
-            while (rootCause.getCause() != null) {
-                rootCause = rootCause.getCause();
-            }
-            assertThat(rootCause).isInstanceOf(ProductException.class);
-            assertThat(rootCause.getMessage()).isEqualTo(INSUFFICIENT_STOCK.getMessage());
-        }
-    }
-
-    @Test
-    @DisplayName("decreaseStock - 재고 차감 성공")
-    void decreaseStock_success() throws Exception {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 5, now, now);
-        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);
-        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
-
-        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);
-        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);
-        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
-
-        // when
-        ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "decreaseStock",
-                cartItems,
-                productMap
-        );
-
-        // then
-        assertThat(product1.getQuantity()).isEqualTo(95);  // 100 - 5
-        assertThat(product2.getQuantity()).isEqualTo(197);  // 200 - 3
-        verify(productService, times(2)).updateProduct(any(Product.class));
-    }
-
-    @Test
-    @DisplayName("decreaseStock - 단일 상품 재고 차감")
-    void decreaseStock_singleProduct() throws Exception {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem = new CartItemResponse(1L, 1L, 100L, 10, now, now);
-        List<CartItemResponse> cartItems = List.of(cartItem);
-
-        Product product = new Product(100L, "상품", "설명", 50, 10000, 30, now, now);
-        Map<Long, Product> productMap = Map.of(100L, product);
-
-        // when
-        ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "decreaseStock",
-                cartItems,
-                productMap
-        );
-
-        // then
-        assertThat(product.getQuantity()).isEqualTo(40);  // 50 - 10
-        verify(productService, times(1)).updateProduct(product);
-    }
-
-    @Test
-    @DisplayName("processCouponDiscount - 쿠폰 없는 경우 할인 0원")
-    void processCouponDiscount_noCoupon() throws Exception {
-        // given
-        Long userCouponId = null;
-        Long userId = 1L;
-        int totalAmount = 50000;
-
-        // when
-        Object result = ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "processCouponDiscount",
-                userCouponId,
-                userId,
-                totalAmount
-        );
-
-        // then
-        assertThat(result).isNotNull();
-        // CouponDiscountResult의 필드 확인
-        Object userCoupon = ReflectionTestUtils.getField(result, "userCoupon");
-        Object discountAmount = ReflectionTestUtils.getField(result, "discountAmount");
-
-        assertThat(userCoupon).isNull();
-        assertThat(discountAmount).isEqualTo(0);
-        verifyNoInteractions(userCouponService);
-    }
-
-    @Test
-    @DisplayName("processCouponDiscount - 정액 할인 쿠폰 적용")
-    void processCouponDiscount_fixedAmountCoupon() throws Exception {
-        // given
-        Long userCouponId = 100L;
-        Long userId = 1L;
-        int totalAmount = 50000;
-
-        LocalDateTime now = LocalDateTime.now();
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, 0L, now, now);
-        Coupon coupon = new Coupon(1L, "5000원 할인", "AMOUNT", 5000, 100, 10, 5, now, now);
-
-        UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
-        given(userCouponService.validateAndGetCoupon(userCouponId, userId)).willReturn(validatedCoupon);
-
-        // when
-        Object result = ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "processCouponDiscount",
-                userCouponId,
-                userId,
-                totalAmount
-        );
-
-        // then
-        assertThat(result).isNotNull();
-        Object returnedUserCoupon = ReflectionTestUtils.getField(result, "userCoupon");
-        Object discountAmount = ReflectionTestUtils.getField(result, "discountAmount");
-
-        assertThat(returnedUserCoupon).isEqualTo(userCoupon);
-        assertThat(discountAmount).isEqualTo(5000);
-        verify(userCouponService).validateAndGetCoupon(userCouponId, userId);
-    }
-
-    @Test
-    @DisplayName("processCouponDiscount - 정률 할인 쿠폰 적용")
-    void processCouponDiscount_percentageCoupon() throws Exception {
-        // given
-        Long userCouponId = 200L;
-        Long userId = 2L;
-        int totalAmount = 100000;
-
-        LocalDateTime now = LocalDateTime.now();
-        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 2L, false, 0L, now, now);
-        Coupon coupon = new Coupon(2L, "10% 할인", "RATE", 10, 100, 20, 8, now, now);
-
-        UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
-        given(userCouponService.validateAndGetCoupon(userCouponId, userId)).willReturn(validatedCoupon);
-
-        // when
-        Object result = ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "processCouponDiscount",
-                userCouponId,
-                userId,
-                totalAmount
-        );
-
-        // then
-        assertThat(result).isNotNull();
-        Object returnedUserCoupon = ReflectionTestUtils.getField(result, "userCoupon");
-        Object discountAmount = ReflectionTestUtils.getField(result, "discountAmount");
-
-        assertThat(returnedUserCoupon).isEqualTo(userCoupon);
-        assertThat(discountAmount).isEqualTo(10000);  // 100000 * 10% = 10000
-        verify(userCouponService).validateAndGetCoupon(userCouponId, userId);
-    }
-
-    @Test
-    @DisplayName("calculateTotalAmount - 여러 상품 다양한 수량 총액 계산")
-    void calculateTotalAmount_multipleProductsWithVariousQuantities() throws Exception {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 1, now, now);   // 1개 x 50000원 = 50000원
-        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 10, now, now);  // 10개 x 1000원 = 10000원
-        CartItemResponse cartItem3 = new CartItemResponse(3L, 1L, 30L, 2, now, now);   // 2개 x 25000원 = 50000원
-        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2, cartItem3);
-
-        Product product1 = new Product(10L, "고가상품", "설명1", 10, 50000, 20, now, now);
-        Product product2 = new Product(20L, "저가상품", "설명2", 100, 1000, 200, now, now);
-        Product product3 = new Product(30L, "중가상품", "설명3", 50, 25000, 100, now, now);
-        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2, 30L, product3);
-
-        // when
-        Integer result = (Integer) ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "calculateTotalAmount",
-                cartItems,
-                productMap
-        );
-
-        // then
-        assertThat(result).isEqualTo(110000);  // 50000 + 10000 + 50000
-    }
-
-    @Test
-    @DisplayName("validateStock - 여러 상품 중 하나라도 재고 부족시 예외")
-    void validateStock_oneProductInsufficientStock() {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 5, now, now);   // 재고 충분
-        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 100, now, now); // 재고 부족!
-        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2);
-
-        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);  // 재고 100개
-        Product product2 = new Product(20L, "상품2", "설명2", 50, 5000, 100, now, now);   // 재고 50개 (100개 요청)
-        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
-
-        // when & then
-        try {
-            ReflectionTestUtils.invokeMethod(
-                    createOrderUseCase,
-                    "validateStock",
-                    cartItems,
-                    productMap
-            );
-            // 예외가 발생하지 않으면 테스트 실패
-            org.junit.jupiter.api.Assertions.fail("ProductException이 발생해야 합니다");
-        } catch (Exception e) {
-            // 리플렉션 예외의 원인을 확인
-            Throwable rootCause = e;
-            while (rootCause.getCause() != null) {
-                rootCause = rootCause.getCause();
-            }
-            assertThat(rootCause).isInstanceOf(ProductException.class);
-        }
-    }
-
-    @Test
-    @DisplayName("decreaseStock - 재고 차감 후 updateProduct 호출 확인")
-    void decreaseStock_callsUpdateProduct() throws Exception {
-        // given
-        LocalDateTime now = LocalDateTime.now();
-        CartItemResponse cartItem1 = new CartItemResponse(1L, 1L, 10L, 2, now, now);
-        CartItemResponse cartItem2 = new CartItemResponse(2L, 1L, 20L, 3, now, now);
-        CartItemResponse cartItem3 = new CartItemResponse(3L, 1L, 30L, 1, now, now);
-        List<CartItemResponse> cartItems = Arrays.asList(cartItem1, cartItem2, cartItem3);
-
-        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);
-        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);
-        Product product3 = new Product(30L, "상품3", "설명3", 150, 15000, 80, now, now);
-        Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2, 30L, product3);
-
-        // when
-        ReflectionTestUtils.invokeMethod(
-                createOrderUseCase,
-                "decreaseStock",
-                cartItems,
-                productMap
-        );
-
-        // then
-        verify(productService, times(3)).updateProduct(any(Product.class));
-        verify(productService).updateProduct(product1);
-        verify(productService).updateProduct(product2);
-        verify(productService).updateProduct(product3);
-    }
+    // decreaseStock은 이제 이벤트 리스너에서 비동기로 처리되어 CreateOrderUseCase에 존재하지 않음
+    // 통합 테스트에서 검증
+    // @Test
+    // @DisplayName("decreaseStock - 재고 차감 후 updateProduct 호출 확인")
+    // void decreaseStock_callsUpdateProduct() throws Exception { ... }
 
     // 동시성 테스트는 통합 테스트에서 실제 Redis Lock으로 검증
     // 단위 테스트에서는 Mock으로 실제 락 동작을 시뮬레이션하기 어려움
@@ -518,15 +195,27 @@ class CreateOrderUseCaseTest {
         Product product = new Product(productId, "테스트상품", "설명", 100, 10000, 50, now, now);
         given(productService.getProductMapByIds(any())).willReturn(Map.of(productId, product));
 
+        // 재고 검증 통과
+        doNothing().when(productService).validateStock(any(), any());
+
+        // 총액 계산: 50,000원 (5개 x 10,000원)
+        given(productService.calculateTotalAmount(any(), any())).willReturn(50000);
+
         // 쿠폰 (5,000원 할인)
         UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, 0L, now, null);
-        Coupon coupon = new Coupon(1L, "5000원 할인", "AMOUNT", 5000, 100, 10, 5, now, now);
-        UserCouponService.ValidatedCoupon validatedCoupon = new UserCouponService.ValidatedCoupon(userCoupon, coupon);
-        given(userCouponService.validateAndGetCoupon(userCouponId, userId)).willReturn(validatedCoupon);
+        given(userCouponService.validateAndCalculateDiscount(eq(userCouponId), eq(userId), eq(50000)))
+                .willReturn(new UserCouponService.CouponDiscountResult(userCoupon, 5000));
 
         // OrderService에서 예외 발생 (주문 생성 실패)
         given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
                 .willThrow(new RuntimeException("주문 생성 중 예외 발생"));
+
+        // TransactionHandler가 Runnable을 즉시 실행하도록 설정
+        doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(transactionHandler).execute(any(Runnable.class));
 
         // when & then
         assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, userCouponId))
@@ -536,17 +225,10 @@ class CreateOrderUseCaseTest {
         // Spring의 @Transactional이 자동으로 롤백 처리
         // 단위 테스트에서는 예외 발생 확인만 수행하고, 실제 롤백은 통합 테스트에서 검증
 
-        // 상태 변경은 수행되었지만 트랜잭션 롤백으로 DB에는 반영되지 않음
-        // 1. 쿠폰 사용 처리가 수행됨 (메모리상)
-        verify(userCouponService).markAsUsed(userCoupon);
+        // 주문 생성이 호출되었으나 예외로 실패
+        verify(orderService).createOrder(eq(userId), eq(userCouponId), eq(50000), eq(5000), eq(45000), any(), any());
 
-        // 2. 포인트 차감이 수행됨 (메모리상)
-        verify(userService).updateUser(user);
-
-        // 3. 재고 차감이 수행됨 (메모리상)
-        verify(productService).updateProduct(product);
-
-        // 4. 장바구니 클리어는 호출되지 않음 (예외 발생으로 도달하지 못함)
+        // 장바구니 클리어는 호출되지 않음 (예외 발생으로 도달하지 못함)
         verify(cartService, never()).clearCart(userId);
     }
 
@@ -570,9 +252,26 @@ class CreateOrderUseCaseTest {
         Product product = new Product(productId, "테스트상품2", "설명2", 50, 20000, 30, now, now);
         given(productService.getProductMapByIds(any())).willReturn(Map.of(productId, product));
 
+        // 재고 검증 통과
+        doNothing().when(productService).validateStock(any(), any());
+
+        // 총액 계산: 60,000원 (3개 x 20,000원)
+        given(productService.calculateTotalAmount(any(), any())).willReturn(60000);
+
+        // 쿠폰 미사용 (할인 없음)
+        given(userCouponService.validateAndCalculateDiscount(isNull(), eq(userId), eq(60000)))
+                .willReturn(new UserCouponService.CouponDiscountResult(null, 0));
+
         // OrderService에서 예외 발생
         given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
                 .willThrow(new RuntimeException("시스템 오류"));
+
+        // TransactionHandler가 Runnable을 즉시 실행하도록 설정
+        doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(transactionHandler).execute(any(Runnable.class));
 
         // when & then
         assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, null)) // 쿠폰 미사용
@@ -582,38 +281,34 @@ class CreateOrderUseCaseTest {
         // Spring의 @Transactional이 자동으로 롤백 처리
         // 단위 테스트에서는 예외 발생 확인만 수행하고, 실제 롤백은 통합 테스트에서 검증
 
-        // 1. 포인트 차감이 수행됨 (메모리상)
-        verify(userService).updateUser(user);
+        // 주문 생성이 호출되었으나 예외로 실패
+        verify(orderService).createOrder(eq(userId), isNull(), eq(60000), eq(0), eq(60000), any(), any());
 
-        // 2. 재고 차감이 수행됨 (메모리상)
-        verify(productService).updateProduct(product);
-
-        // 3. 쿠폰 관련 메서드는 호출되지 않아야 함
-        verify(userCouponService, never()).markAsUsed(any());
-
-        // 4. 장바구니 클리어는 호출되지 않음
+        // 장바구니 클리어는 호출되지 않음
         verify(cartService, never()).clearCart(userId);
     }
 
     @Test
-    @DisplayName("여러 상품 주문 실패 시 모든 상품의 재고가 롤백된다")
-    void rollbackMultipleProductsOnFailure() {
+    @DisplayName("여러 상품 + 정률 쿠폰 주문 시 할인액과 최종 금액이 정확히 계산된다")
+    void createOrder_multipleProducts_withPercentageCoupon() {
         // given
         Long userId = 1L;
+        Long userCouponId = 100L;
         LocalDateTime now = LocalDateTime.now();
 
-        // 사용자
+        // 사용자 (포인트 충분)
         User user = new User(userId, "testUser", 200000, 0L, now);
         given(userService.getUserById(userId)).willReturn(user);
 
-        // 장바구니 (3개 상품)
+        // 장바구니 (3개 상품, 총액 50,000원)
         Long productId1 = 10L;
         Long productId2 = 20L;
         Long productId3 = 30L;
         CartItemResponse cartItem1 = new CartItemResponse(1L, userId, productId1, 2, now, now); // 2개 x 10,000 = 20,000
         CartItemResponse cartItem2 = new CartItemResponse(2L, userId, productId2, 3, now, now); // 3개 x 5,000 = 15,000
         CartItemResponse cartItem3 = new CartItemResponse(3L, userId, productId3, 1, now, now); // 1개 x 15,000 = 15,000
-        given(cartService.getCartItems(userId)).willReturn(List.of(cartItem1, cartItem2, cartItem3));
+        List<CartItemResponse> cartItems = List.of(cartItem1, cartItem2, cartItem3);
+        given(cartService.getCartItems(userId)).willReturn(cartItems);
 
         // 상품들
         Product product1 = new Product(productId1, "상품1", "설명1", 100, 10000, 50, now, now);
@@ -623,24 +318,199 @@ class CreateOrderUseCaseTest {
                 Map.of(productId1, product1, productId2, product2, productId3, product3)
         );
 
-        // OrderService에서 예외 발생
-        given(orderService.createOrder(anyLong(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
-                .willThrow(new RuntimeException("데이터베이스 연결 오류"));
+        // 재고 검증 통과
+        doNothing().when(productService).validateStock(any(), any());
 
-        // when & then
-        assertThatThrownBy(() -> createOrderUseCase.createOrder(userId, null))
-                .isInstanceOf(RuntimeException.class);
+        // 총액 계산: 50,000원
+        given(productService.calculateTotalAmount(any(), any())).willReturn(50000);
 
-        // Spring의 @Transactional이 자동으로 롤백 처리
-        // 단위 테스트에서는 예외 발생 확인만 수행하고, 실제 롤백은 통합 테스트에서 검증
+        // 쿠폰 할인: 20% 할인 (10,000원)
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 1L, false, 0L, now, null);
+        given(userCouponService.validateAndCalculateDiscount(eq(userCouponId), eq(userId), eq(50000)))
+                .willReturn(new UserCouponService.CouponDiscountResult(userCoupon, 10000));
 
-        // 1. 포인트 차감이 수행됨 (메모리상)
-        verify(userService).updateUser(user);
+        // 주문 생성 성공 (최종 금액 40,000원)
+        Order createdOrder = new Order(999L, userId, userCouponId, 50000, 10000, 40000, "PENDING", now);
+        given(orderService.createOrder(eq(userId), eq(userCouponId), eq(50000), eq(10000), eq(40000), any(), any()))
+                .willReturn(createdOrder);
 
-        // 2. 각 상품의 재고 차감이 수행됨 (메모리상)
-        verify(productService, times(3)).updateProduct(any(Product.class)); // 3개 상품 차감
+        // TransactionHandler가 Runnable을 즉시 실행하도록 설정
+        doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(transactionHandler).execute(any(Runnable.class));
 
-        // 3. 장바구니 클리어는 호출되지 않음
-        verify(cartService, never()).clearCart(userId);
+        // when
+        createOrderUseCase.createOrder(userId, userCouponId);
+
+        // then
+        // 1. 총액 50,000원, 할인 10,000원, 최종 40,000원으로 주문이 생성되었는지 확인
+        verify(orderService).createOrder(
+                eq(userId),
+                eq(userCouponId),
+                eq(50000),      // totalAmount
+                eq(10000),      // discountAmount
+                eq(40000),      // finalAmount (50,000 - 10,000)
+                eq(cartItems),
+                any()
+        );
+
+        // 2. 장바구니가 클리어되었는지 확인
+        verify(cartService).clearCart(userId);
+
+        // 3. OrderCreatedEvent가 올바른 데이터로 발행되었는지 확인
+        ArgumentCaptor<OrderCreatedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCreatedEvent.class);
+        verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+
+        OrderCreatedEvent capturedEvent = eventCaptor.getValue();
+        assertThat(capturedEvent.userId()).isEqualTo(userId);
+        assertThat(capturedEvent.orderId()).isEqualTo(999L);
+        assertThat(capturedEvent.userCouponId()).isEqualTo(userCouponId);
+        assertThat(capturedEvent.finalAmount()).isEqualTo(40000);
+        assertThat(capturedEvent.cartItems()).hasSize(3);
+
+        // 4. 포인트 검증이 최종 금액(40,000원)으로 이루어졌는지 확인
+        verify(userService).getUserById(userId);
+    }
+
+    @Test
+    @DisplayName("여러 상품 + 고액 쿠폰 주문 시 최종 금액이 0원 미만으로 떨어지지 않는다")
+    void createOrder_multipleProducts_withHighValueCoupon_minimumZero() {
+        // given
+        Long userId = 1L;
+        Long userCouponId = 200L;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 사용자
+        User user = new User(userId, "testUser", 500000, 0L, now);
+        given(userService.getUserById(userId)).willReturn(user);
+
+        // 장바구니 (2개 상품, 총액 30,000원)
+        Long productId1 = 10L;
+        Long productId2 = 20L;
+        CartItemResponse cartItem1 = new CartItemResponse(1L, userId, productId1, 1, now, now); // 1개 x 10,000 = 10,000
+        CartItemResponse cartItem2 = new CartItemResponse(2L, userId, productId2, 2, now, now); // 2개 x 10,000 = 20,000
+        List<CartItemResponse> cartItems = List.of(cartItem1, cartItem2);
+        given(cartService.getCartItems(userId)).willReturn(cartItems);
+
+        // 상품들
+        Product product1 = new Product(productId1, "상품1", "설명1", 50, 10000, 30, now, now);
+        Product product2 = new Product(productId2, "상품2", "설명2", 100, 10000, 50, now, now);
+        given(productService.getProductMapByIds(any())).willReturn(
+                Map.of(productId1, product1, productId2, product2)
+        );
+
+        // 재고 검증 통과
+        doNothing().when(productService).validateStock(any(), any());
+
+        // 총액 계산: 30,000원
+        given(productService.calculateTotalAmount(any(), any())).willReturn(30000);
+
+        // 쿠폰 할인: 50,000원 (총액보다 큼)
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, 2L, false, 0L, now, null);
+        given(userCouponService.validateAndCalculateDiscount(eq(userCouponId), eq(userId), eq(30000)))
+                .willReturn(new UserCouponService.CouponDiscountResult(userCoupon, 50000));
+
+        // 주문 생성 성공 (최종 금액 0원, 음수 방지)
+        Order createdOrder = new Order(888L, userId, userCouponId, 30000, 50000, 0, "PENDING", now);
+        given(orderService.createOrder(eq(userId), eq(userCouponId), eq(30000), eq(50000), eq(0), any(), any()))
+                .willReturn(createdOrder);
+
+        // TransactionHandler가 Runnable을 즉시 실행하도록 설정
+        doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(transactionHandler).execute(any(Runnable.class));
+
+        // when
+        createOrderUseCase.createOrder(userId, userCouponId);
+
+        // then
+        // 1. 총액 30,000원, 할인 50,000원이지만 최종 금액이 0원으로 생성되었는지 확인
+        verify(orderService).createOrder(
+                eq(userId),
+                eq(userCouponId),
+                eq(30000),      // totalAmount
+                eq(50000),      // discountAmount
+                eq(0),          // finalAmount (음수가 아닌 0)
+                eq(cartItems),
+                any()
+        );
+
+        // 2. 장바구니가 클리어되었는지 확인
+        verify(cartService).clearCart(userId);
+
+        // 3. OrderCreatedEvent가 올바른 데이터로 발행되었는지 확인
+        ArgumentCaptor<OrderCreatedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCreatedEvent.class);
+        verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+
+        OrderCreatedEvent capturedEvent = eventCaptor.getValue();
+        assertThat(capturedEvent.userId()).isEqualTo(userId);
+        assertThat(capturedEvent.orderId()).isEqualTo(888L);
+        assertThat(capturedEvent.userCouponId()).isEqualTo(userCouponId);
+        assertThat(capturedEvent.finalAmount()).isEqualTo(0);  // 최종 금액이 0원
+        assertThat(capturedEvent.cartItems()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("여러 상품 주문 시 상품 ID가 정렬되어 ProductService에 전달된다 (데드락 방지)")
+    void createOrder_multipleProducts_productIdsAreSorted() {
+        // given
+        Long userId = 1L;
+        LocalDateTime now = LocalDateTime.now();
+
+        // 사용자
+        User user = new User(userId, "testUser", 100000, 0L, now);
+        given(userService.getUserById(userId)).willReturn(user);
+
+        // 장바구니 (상품 ID가 정렬되지 않은 순서: 30, 10, 20)
+        CartItemResponse cartItem1 = new CartItemResponse(1L, userId, 30L, 1, now, now);
+        CartItemResponse cartItem2 = new CartItemResponse(2L, userId, 10L, 2, now, now);
+        CartItemResponse cartItem3 = new CartItemResponse(3L, userId, 20L, 1, now, now);
+        List<CartItemResponse> cartItems = List.of(cartItem1, cartItem2, cartItem3);
+        given(cartService.getCartItems(userId)).willReturn(cartItems);
+
+        // 상품들
+        Product product1 = new Product(10L, "상품1", "설명1", 100, 10000, 50, now, now);
+        Product product2 = new Product(20L, "상품2", "설명2", 200, 5000, 100, now, now);
+        Product product3 = new Product(30L, "상품3", "설명3", 150, 15000, 80, now, now);
+        given(productService.getProductMapByIds(any())).willReturn(
+                Map.of(10L, product1, 20L, product2, 30L, product3)
+        );
+
+        // 재고 검증 통과
+        doNothing().when(productService).validateStock(any(), any());
+
+        // 총액 계산
+        given(productService.calculateTotalAmount(any(), any())).willReturn(40000);
+
+        // 쿠폰 할인 없음
+        given(userCouponService.validateAndCalculateDiscount(isNull(), eq(userId), eq(40000)))
+                .willReturn(new UserCouponService.CouponDiscountResult(null, 0));
+
+        // 주문 생성 성공
+        Order createdOrder = new Order(777L, userId, null, 40000, 0, 40000, "PENDING", now);
+        given(orderService.createOrder(any(), any(), anyInt(), anyInt(), anyInt(), any(), any()))
+                .willReturn(createdOrder);
+
+        // TransactionHandler가 Runnable을 즉시 실행하도록 설정
+        doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(transactionHandler).execute(any(Runnable.class));
+
+        // when
+        createOrderUseCase.createOrder(userId, null);
+
+        // then
+        // ProductService.getProductMapByIds가 정렬된 상품 ID 리스트를 받았는지 확인 (10, 20, 30)
+        ArgumentCaptor<List<Long>> productIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productService).getProductMapByIds(productIdsCaptor.capture());
+
+        List<Long> capturedProductIds = productIdsCaptor.getValue();
+        assertThat(capturedProductIds).containsExactly(10L, 20L, 30L); // 정렬된 순서
     }
 }
