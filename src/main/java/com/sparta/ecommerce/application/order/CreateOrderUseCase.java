@@ -2,25 +2,21 @@ package com.sparta.ecommerce.application.order;
 
 import com.sparta.ecommerce.application.cart.CartService;
 import com.sparta.ecommerce.application.coupon.UserCouponService;
+import com.sparta.ecommerce.application.order.event.OrderCreatedEvent;
 import com.sparta.ecommerce.application.product.ProductService;
 import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.common.transaction.TransactionHandler;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.cart.exception.CartException;
-import com.sparta.ecommerce.domain.coupon.entity.UserCoupon;
-import com.sparta.ecommerce.domain.product.ProductRankingRepository;
+import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
-import org.springframework.core.task.TaskExecutor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_EMPTY;
 
@@ -28,19 +24,26 @@ import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_E
  * 주문 생성 유스케이스
  *
  * 장바구니 상품을 기반으로 주문을 생성합니다.
- * Redis MultiLock과 TransactionHandler를 조합하여 동시성 제어 및 원자성을 보장합니다.
+ * 비동기 처리 + 최종 일관성(Eventually Consistent) 패턴을 사용합니다.
  *
- * 동시성 제어 전략:
- *   1. Redis MultiLock 획득 (트랜잭션 밖) - DB 커넥션 고갈 방지
- *   2. 트랜잭션 시작 (락 안) - TransactionHandler를 통해 제어
- *   3. 상품 조회 + 검증 + 상태 변경 (트랜잭션 안, 락 안) - TOCTOU 방지
- *   4. 트랜잭션 커밋
- *   5. 락 해제
+ * 처리 흐름:
+ *   1. 낙관적 검증 (락 없이 재고 확인)
+ *   2. 주문을 PENDING 상태로 생성 (트랜잭션)
+ *   3. OrderCreatedEvent 발행
+ *   4. [비동기] 재고 차감 리스너가 멀티락 획득 후 재고 차감
+ *   5. [비동기] 성공 시 주문 상태를 COMPLETED로 변경
+ *   6. [비동기] 실패 시 주문 상태를 FAILED로 변경 및 보상 트랜잭션
  *
  * 트랜잭션 제어:
  *   TransactionHandler를 통해 기술(트랜잭션)과 도메인 로직을 분리합니다.
+ *   검증은 트랜잭션 밖에서 수행하여 트랜잭션 시간을 최소화합니다.
+ *
+ * 이벤트 기반 처리:
+ *   주문 생성 완료 후 OrderCreatedEvent를 발행하여 부수 작업을 비동기로 처리합니다.
+ *   재고 차감, 포인트 차감, 쿠폰 사용, 랭킹 업데이트 등이 비동기로 처리됩니다.
  */
 @Service
+@RequiredArgsConstructor
 public class CreateOrderUseCase {
 
     private final CartService cartService;
@@ -48,35 +51,14 @@ public class CreateOrderUseCase {
     private final UserCouponService userCouponService;
     private final OrderService orderService;
     private final ProductService productService;
-    private final RedissonClient redissonClient;
     private final TransactionHandler transactionHandler;
-    private final ProductRankingRepository productRankingRepository;
-    private final TaskExecutor taskExecutor;
-
-    public CreateOrderUseCase(
-            CartService cartService,
-            UserService userService,
-            UserCouponService userCouponService,
-            OrderService orderService,
-            ProductService productService,
-            RedissonClient redissonClient,
-            TransactionHandler transactionHandler,
-            ProductRankingRepository productRankingRepository,
-            TaskExecutor taskExecutor
-    ) {
-        this.cartService = cartService;
-        this.userService = userService;
-        this.userCouponService = userCouponService;
-        this.orderService = orderService;
-        this.productService = productService;
-        this.redissonClient = redissonClient;
-        this.transactionHandler = transactionHandler;
-        this.productRankingRepository = productRankingRepository;
-        this.taskExecutor = taskExecutor;
-    }
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 주문을 생성합니다.
+     *
+     * 낙관적 검증 후 주문을 PENDING 상태로 생성하고,
+     * 실제 재고 차감은 비동기 이벤트 리스너에서 처리합니다.
      *
      * @param userId 사용자 ID
      * @param userCouponId 사용할 쿠폰 ID (null 가능)
@@ -88,6 +70,7 @@ public class CreateOrderUseCase {
     public void createOrder(Long userId, Long userCouponId) {
         // 사용자 및 장바구니 조회
         User user = userService.getUserById(userId);
+
         List<CartItemResponse> findCartItems = cartService.getCartItems(userId);
         if (findCartItems.isEmpty()) throw new CartException(CART_IS_EMPTY);
 
@@ -98,50 +81,29 @@ public class CreateOrderUseCase {
                 .sorted()
                 .toList();
 
-        // Redis MultiLock 생성
-        RLock[] locks = productIds.stream()
-                .map(id -> redissonClient.getLock("product:lock:" + id))
-                .toArray(RLock[]::new);
-        RLock multiLock = redissonClient.getMultiLock(locks);
+        // 낙관적 검증 (락 없이 수행)
+        OrderValidation validation = validateOrder(user, userCouponId, findCartItems, productIds);
 
-        try {
-            boolean available = multiLock.tryLock(30, 10, TimeUnit.SECONDS);
-            if (!available) {
-                throw new IllegalStateException("상품 락을 획득할 수 없습니다");
-            }
-
-            // TransactionHandler를 통해 트랜잭션 제어
-            transactionHandler.execute(() ->
-                    executeOrderTransaction(user, userCouponId, findCartItems, productIds)
-            );
-
-            // TaskExecutor를 통해 랭킹 업데이트 (테스트 환경에서는 동기 실행 가능)
-            taskExecutor.execute(() ->
-                    updateProductSalesRanking(findCartItems)
-            );
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("락 획득 중 인터럽트 발생", e);
-        } finally {
-            if (multiLock.isHeldByCurrentThread()) {
-                multiLock.unlock();
-            }
-        }
+        // TransactionHandler를 통해 트랜잭션 제어 (주문을 PENDING 상태로 생성)
+        transactionHandler.execute(() ->
+                executeOrderTransaction(user, userCouponId, findCartItems, validation)
+        );
     }
 
     /**
-     * 주문 생성 로직을 수행합니다.
+     * 주문 검증을 수행하고 주문 생성에 필요한 데이터를 준비합니다.
      *
-     * Redis 락이 획득된 상태에서 TransactionHandler를 통해 트랜잭션 내에서 호출됩니다.
-     * 상품 조회부터 주문 생성까지 원자적으로 처리합니다.
+     * Redis 락이 획득된 상태에서 트랜잭션 밖에서 호출됩니다.
+     * 재고, 금액, 쿠폰, 포인트 등을 검증하고, 검증 과정에서 계산된 데이터를 반환합니다.
+     * 중복 조회/계산을 방지하기 위해 검증 결과와 함께 필요한 데이터를 반환합니다.
      *
      * @param user 사용자
      * @param userCouponId 사용할 쿠폰 ID (null 가능)
      * @param findCartItems 장바구니 상품 목록
      * @param productIds 정렬된 상품 ID 목록
+     * @return 검증된 주문 데이터
      */
-    private void executeOrderTransaction(
+    private OrderValidation validateOrder(
             User user,
             Long userCouponId,
             List<CartItemResponse> findCartItems,
@@ -150,96 +112,59 @@ public class CreateOrderUseCase {
         // 상품 조회
         Map<Long, Product> productMap = productService.getProductMapByIds(productIds);
 
-        // 검증
-        validateStock(findCartItems, productMap);
-        int totalAmount = calculateTotalAmount(findCartItems, productMap);
-        CouponDiscountResult couponResult = processCouponDiscount(userCouponId, user.getUserId(), totalAmount);
+        // 검증 - 각 도메인 서비스에 위임
+        productService.validateStock(findCartItems, productMap);
+        int totalAmount = productService.calculateTotalAmount(findCartItems, productMap);
+        UserCouponService.CouponDiscountResult couponResult =
+                userCouponService.validateAndCalculateDiscount(userCouponId, user.getUserId(), totalAmount);
         int finalAmount = calculateFinalAmount(totalAmount, couponResult.discountAmount());
         user.validateSufficientPoint(finalAmount);
 
-        // 상태 변경
-        if (couponResult.userCoupon() != null) {
-            userCouponService.markAsUsed(couponResult.userCoupon());
-        }
-        user.deductPoint(finalAmount);
-        userService.updateUser(user);
-        decreaseStock(findCartItems, productMap);
+        // 검증 과정에서 계산된 데이터를 반환 (중복 조회/계산 방지)
+        return new OrderValidation(productMap, totalAmount, couponResult.discountAmount(), finalAmount);
+    }
 
+    /**
+     * 주문 생성 트랜잭션을 수행합니다.
+     *
+     * Redis 락이 획득된 상태에서 TransactionHandler를 통해 트랜잭션 내에서 호출됩니다.
+     * 주문 생성 및 장바구니 삭제만 수행하고, 포인트 차감, 재고 차감, 쿠폰 사용은 이벤트로 처리합니다.
+     *
+     * @param user 사용자
+     * @param userCouponId 사용할 쿠폰 ID (null 가능)
+     * @param findCartItems 장바구니 상품 목록
+     * @param validation 검증된 주문 데이터
+     * @return 생성된 주문
+     */
+    private Order executeOrderTransaction(
+            User user,
+            Long userCouponId,
+            List<CartItemResponse> findCartItems,
+            OrderValidation validation
+    ) {
         // 주문 생성
-        orderService.createOrder(
+        Order createdOrder = orderService.createOrder(
                 user.getUserId(),
                 userCouponId,
-                totalAmount,
-                couponResult.discountAmount(),
-                finalAmount,
+                validation.totalAmount,
+                validation.discountAmount,
+                validation.finalAmount,
                 findCartItems,
-                productMap
+                validation.productMap
         );
 
         cartService.clearCart(user.getUserId());
-    }
 
-    /**
-     * 판매량 랭킹을 업데이트합니다.
-     *
-     * Redis Sorted Set에 상품별 판매량을 증가시킵니다.
-     */
-    private void updateProductSalesRanking(List<CartItemResponse> cartItems) {
-        for (CartItemResponse cartItem : cartItems) {
-            productRankingRepository.incrementSalesCount(
-                    cartItem.productId(),
-                    cartItem.quantity()
-            );
-        }
-    }
+        // 주문 생성 완료 이벤트 발행 (포인트 차감, 재고 차감, 쿠폰 사용, 랭킹 업데이트는 이벤트 리스너에서 처리)
+        applicationEventPublisher.publishEvent(new OrderCreatedEvent(
+                user.getUserId(),
+                createdOrder.getOrderId(),
+                userCouponId,
+                validation.finalAmount,
+                findCartItems
+        ));
 
-    /**
-     * 장바구니 상품들의 재고를 검증합니다.
-     */
-    private void validateStock(List<CartItemResponse> cartItems, Map<Long, Product> productMap) {
-        for (CartItemResponse cartItem : cartItems) {
-            Product product = productMap.get(cartItem.productId());
-            product.validateStock(cartItem.quantity());
-        }
-    }
-
-    /**
-     * 장바구니 상품들의 재고를 차감하고 저장합니다.
-     */
-    private void decreaseStock(List<CartItemResponse> cartItems, Map<Long, Product> productMap) {
-        for (CartItemResponse cartItem : cartItems) {
-            Product product = productMap.get(cartItem.productId());
-            product.decreaseStock(cartItem.quantity());
-            productService.updateProduct(product);
-        }
-    }
-
-    /**
-     * 쿠폰 검증 및 할인 금액을 계산합니다.
-     */
-    private CouponDiscountResult processCouponDiscount(Long userCouponId, Long userId, int totalAmount) {
-        if (userCouponId == null) {
-            return new CouponDiscountResult(null, 0);
-        }
-
-        UserCouponService.ValidatedCoupon validatedCoupon =
-                userCouponService.validateAndGetCoupon(userCouponId, userId);
-
-        int discountAmount = validatedCoupon.coupon().calculateDiscount(totalAmount);
-
-        return new CouponDiscountResult(validatedCoupon.userCoupon(), discountAmount);
-    }
-
-    /**
-     * 장바구니 총 금액을 계산합니다.
-     */
-    private int calculateTotalAmount(List<CartItemResponse> cartItems, Map<Long, Product> productMap) {
-        return cartItems.stream()
-                .mapToInt(cartItem -> {
-                    Product product = productMap.get(cartItem.productId());
-                    return product.getPrice() * cartItem.quantity();
-                })
-                .sum();
+        return createdOrder;
     }
 
     /**
@@ -250,8 +175,15 @@ public class CreateOrderUseCase {
     }
 
     /**
-     * 쿠폰 할인 처리 결과
+     * 주문 검증 결과 및 주문 생성에 필요한 데이터
+     *
+     * 검증 과정에서 조회/계산된 데이터를 담아 중복 호출을 방지합니다.
      */
-    private record CouponDiscountResult(UserCoupon userCoupon, int discountAmount) {
+    private record OrderValidation(
+            Map<Long, Product> productMap,
+            int totalAmount,
+            int discountAmount,
+            int finalAmount
+    ) {
     }
 }

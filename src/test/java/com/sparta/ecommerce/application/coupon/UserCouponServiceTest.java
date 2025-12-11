@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class UserCouponServiceTest {
@@ -185,4 +187,90 @@ class UserCouponServiceTest {
         assertThat(userCoupon.getUsedAt()).isNotNull();
         verify(userCouponRepository).save(userCoupon);
     }
+
+
+    @Test
+    @DisplayName("validateAndCalculateDiscount - 쿠폰 없는 경우 할인 0원")
+    void validateAndCalculateDiscount_noCoupon() {
+        // given
+        Long userCouponId = null;
+        Long userId = 1L;
+        int totalAmount = 50000;
+
+        // when
+        UserCouponService.CouponDiscountResult result = userCouponService.validateAndCalculateDiscount(
+                userCouponId,
+                userId,
+                totalAmount
+        );
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.userCoupon()).isNull();
+        assertThat(result.discountAmount()).isEqualTo(0);
+        verifyNoInteractions(userCouponRepository, couponRepository);
+    }
+
+    @Test
+    @DisplayName("validateAndCalculateDiscount - 정액 할인 쿠폰 적용")
+    void validateAndCalculateDiscount_fixedAmountCoupon() {
+        // given
+        Long userCouponId = 100L;
+        Long userId = 1L;
+        Long couponId = 1L;
+        int totalAmount = 50000;
+
+        LocalDateTime now = LocalDateTime.now();
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, couponId, false, 0L, now, null);
+        Coupon coupon = new Coupon(couponId, "5000원 할인", "AMOUNT", 5000, 100, 10, 5, now, now.plusDays(30));
+
+        given(userCouponRepository.findById(userCouponId)).willReturn(Optional.of(userCoupon));
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
+
+        // when
+        UserCouponService.CouponDiscountResult result = userCouponService.validateAndCalculateDiscount(
+                userCouponId,
+                userId,
+                totalAmount
+        );
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.userCoupon()).isEqualTo(userCoupon);
+        assertThat(result.discountAmount()).isEqualTo(5000);
+        verify(userCouponRepository).findById(userCouponId);
+        verify(couponRepository).findById(couponId);
+    }
+
+    @Test
+    @DisplayName("validateAndCalculateDiscount - 정률 할인 쿠폰 적용")
+    void validateAndCalculateDiscount_percentageCoupon() {
+        // given
+        Long userCouponId = 200L;
+        Long userId = 2L;
+        Long couponId = 2L;
+        int totalAmount = 100000;
+
+        LocalDateTime now = LocalDateTime.now();
+        UserCoupon userCoupon = new UserCoupon(userCouponId, userId, couponId, false, 0L, now, null);
+        Coupon coupon = new Coupon(couponId, "10% 할인", "RATE", 10, 100, 20, 8, now, now.plusDays(30));
+
+        given(userCouponRepository.findById(userCouponId)).willReturn(Optional.of(userCoupon));
+        given(couponRepository.findById(couponId)).willReturn(Optional.of(coupon));
+
+        // when
+        UserCouponService.CouponDiscountResult result = userCouponService.validateAndCalculateDiscount(
+                userCouponId,
+                userId,
+                totalAmount
+        );
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.userCoupon()).isEqualTo(userCoupon);
+        assertThat(result.discountAmount()).isEqualTo(10000);  // 100000 * 10% = 10000
+        verify(userCouponRepository).findById(userCouponId);
+        verify(couponRepository).findById(couponId);
+    }
+
 }

@@ -1,10 +1,10 @@
 package com.sparta.ecommerce.config;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
@@ -13,6 +13,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * 운영 환경: ThreadPoolTaskExecutor로 비동기 실행
  * 테스트 환경: SyncTaskExecutor로 동기 실행 (테스트 안정성 확보)
  */
+@EnableAsync
 @Configuration
 public class AsyncConfig {
 
