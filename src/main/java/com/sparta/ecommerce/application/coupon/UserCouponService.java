@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -120,6 +121,7 @@ public class UserCouponService {
      *
      * @param event 주문 생성 완료 이벤트
      */
+    @Transactional
     public void processCouponUsage(OrderCreatedEvent event) {
 
         // 주문 상태 확인 (FAILED 상태면 이미 다른 작업이 실패함)

@@ -255,6 +255,7 @@ public class ProductService {
      *
      * @param cartItems 복구할 장바구니 상품 목록
      */
+    @Transactional
     public void restoreStock(List<CartItemResponse> cartItems) {
         log.debug("재고 복구 시작 - Items: {}", cartItems);
 

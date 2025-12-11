@@ -31,7 +31,6 @@ public class PointDeductedEventListener {
      *
      * @param event 주문 생성 완료 이벤트
      */
-    @Transactional
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handlePointDeducted(OrderCreatedEvent event) {
         userService.deductPointForOrder(event);

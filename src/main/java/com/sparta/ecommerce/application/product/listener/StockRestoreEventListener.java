@@ -29,7 +29,6 @@ public class StockRestoreEventListener {
      *
      * @param event 재고 복구 이벤트
      */
-    @Transactional
     @EventListener
     public void handle(StockRestoreEvent event) {
         log.debug("재고 복구 이벤트 수신 - Items: {}", event.cartItems());

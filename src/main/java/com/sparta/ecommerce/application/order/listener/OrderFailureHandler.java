@@ -29,7 +29,6 @@ public class OrderFailureHandler {
      *
      * @param event 재고 차감 실패 이벤트
      */
-    @Transactional
     @EventListener
     public void handleStockDeductionFailure(StockDeductionFailedEvent event) {
         orderService.handleStockDeductionFailure(event);
@@ -40,7 +39,6 @@ public class OrderFailureHandler {
      *
      * @param event 포인트 차감 실패 이벤트
      */
-    @Transactional
     @EventListener
     public void handlePointDeductionFailure(PointDeductionFailedEvent event) {
         orderService.handlePointDeductionFailure(event);
@@ -51,7 +49,6 @@ public class OrderFailureHandler {
      *
      * @param event 쿠폰 사용 실패 이벤트
      */
-    @Transactional
     @EventListener
     public void handleCouponUsageFailure(CouponUsageFailedEvent event) {
         orderService.handleCouponUsageFailure(event);

@@ -89,6 +89,7 @@ public class UserService {
      * @param userId 사용자 ID
      * @param amount 복구할 포인트 금액
      */
+    @Transactional
     public void restorePoint(Long userId, int amount) {
         try {
             log.debug("포인트 복구 시작 - UserId: {}, Amount: {}", userId, amount);

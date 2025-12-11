@@ -45,7 +45,6 @@ public class StockDecreasedEventListener {
      *
      * @param event 주문 생성 완료 이벤트
      */
-    @Transactional
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleStockDecreased(OrderCreatedEvent event) {
         log.debug("재고 차감 처리 시작 - OrderId: {}", event.orderId());

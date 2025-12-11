@@ -15,7 +15,6 @@ public class PointRestoreEventListener {
 
     private final UserService userService;
 
-    @Transactional
     @EventListener
     public void handle(PointRestoreEvent event) {
         log.info("포인트 복구 이벤트 수신 - UserId: {}, Amount: {}", event.userId(), event.amount());
