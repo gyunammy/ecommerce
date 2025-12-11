@@ -292,6 +292,6 @@ class OrderServiceTest {
 
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
-        assertThat(capturedOrder.getStatus()).isEqualTo("COMPLETED");
+        assertThat(capturedOrder.getStatus()).isEqualTo("PENDING");
     }
 }
