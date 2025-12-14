@@ -62,7 +62,7 @@ class OrderServiceTest {
         Product product2 = new Product(20L, "마우스", "무선 마우스", 200, 10000, 100, now, now);
         Map<Long, Product> productMap = Map.of(10L, product1, 20L, product2);
 
-        Order savedOrder = new Order(1L, userId, userCouponId, totalAmount, discountAmount, usedPoint, "COMPLETED", now);
+        Order savedOrder = new Order(1L, userId, userCouponId, totalAmount, discountAmount, usedPoint, "PENDING", now);
         given(orderRepository.save(any(Order.class))).willReturn(savedOrder);
 
         // when
@@ -76,13 +76,13 @@ class OrderServiceTest {
         assertThat(result.getTotalAmount()).isEqualTo(totalAmount);
         assertThat(result.getDiscountAmount()).isEqualTo(discountAmount);
         assertThat(result.getUsedPoint()).isEqualTo(usedPoint);
-        assertThat(result.getStatus()).isEqualTo("COMPLETED");
+        assertThat(result.getStatus()).isEqualTo("PENDING");
 
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
         assertThat(capturedOrder.getUserId()).isEqualTo(userId);
         assertThat(capturedOrder.getUserCouponId()).isEqualTo(userCouponId);
-        assertThat(capturedOrder.getStatus()).isEqualTo("COMPLETED");
+        assertThat(capturedOrder.getStatus()).isEqualTo("PENDING");
 
         verify(orderItemRepository).saveAll(orderItemsCaptor.capture());
         List<OrderItem> capturedOrderItems = orderItemsCaptor.getValue();
@@ -292,6 +292,6 @@ class OrderServiceTest {
 
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
-        assertThat(capturedOrder.getStatus()).isEqualTo("COMPLETED");
+        assertThat(capturedOrder.getStatus()).isEqualTo("PENDING");
     }
 }
