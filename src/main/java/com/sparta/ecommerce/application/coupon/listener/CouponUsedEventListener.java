@@ -14,9 +14,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *
  * OrderCreatedEvent를 받아서 병렬로 쿠폰 사용 처리를 위임합니다.
  * 성공/실패 처리 및 이벤트 발행은 UserCouponService에서 처리합니다.
+ *
+ * NOTE: Kafka를 사용하도록 변경되어 비활성화됨 (OrderCreatedEventConsumer 사용)
  */
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class CouponUsedEventListener {
 

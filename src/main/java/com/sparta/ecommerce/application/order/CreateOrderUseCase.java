@@ -12,7 +12,8 @@ import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import com.sparta.ecommerce.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -29,7 +30,7 @@ import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_E
  * 처리 흐름:
  *   1. 낙관적 검증 (락 없이 재고 확인)
  *   2. 주문을 PENDING 상태로 생성 (트랜잭션)
- *   3. OrderCreatedEvent 발행
+ *   3. OrderCreatedEvent를 Kafka로 발행
  *   4. [비동기] 재고 차감 리스너가 멀티락 획득 후 재고 차감
  *   5. [비동기] 성공 시 주문 상태를 COMPLETED로 변경
  *   6. [비동기] 실패 시 주문 상태를 FAILED로 변경 및 보상 트랜잭션
@@ -39,9 +40,10 @@ import static com.sparta.ecommerce.domain.cart.exception.CartErrorCode.CART_IS_E
  *   검증은 트랜잭션 밖에서 수행하여 트랜잭션 시간을 최소화합니다.
  *
  * 이벤트 기반 처리:
- *   주문 생성 완료 후 OrderCreatedEvent를 발행하여 부수 작업을 비동기로 처리합니다.
- *   재고 차감, 포인트 차감, 쿠폰 사용, 랭킹 업데이트 등이 비동기로 처리됩니다.
+ *   주문 생성 완료 후 OrderCreatedEvent를 Kafka로 발행하여 부수 작업을 비동기로 처리합니다.
+ *   재고 차감, 포인트 차감, 쿠폰 사용, 랭킹 업데이트 등이 Kafka Consumer에서 비동기로 처리됩니다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CreateOrderUseCase {
@@ -52,7 +54,7 @@ public class CreateOrderUseCase {
     private final OrderService orderService;
     private final ProductService productService;
     private final TransactionHandler transactionHandler;
-    private final ApplicationEventPublisher applicationEventPublisher;
+    private final KafkaTemplate<String, OrderCreatedEvent> orderCreatedKafkaTemplate;
 
     /**
      * 주문을 생성합니다.
@@ -155,14 +157,17 @@ public class CreateOrderUseCase {
 
         cartService.clearCart(user.getUserId());
 
-        // 주문 생성 완료 이벤트 발행 (포인트 차감, 재고 차감, 쿠폰 사용, 랭킹 업데이트는 이벤트 리스너에서 처리)
-        applicationEventPublisher.publishEvent(new OrderCreatedEvent(
+        // 주문 생성 완료 이벤트를 Kafka로 발행 (포인트 차감, 재고 차감, 쿠폰 사용, 랭킹 업데이트는 Kafka Consumer에서 처리)
+        OrderCreatedEvent event = new OrderCreatedEvent(
                 user.getUserId(),
                 createdOrder.getOrderId(),
                 userCouponId,
                 validation.finalAmount,
                 findCartItems
-        ));
+        );
+        orderCreatedKafkaTemplate.send("order-created-topic", event);
+        log.info("주문 생성 이벤트 Kafka 발행 - orderId: {}, userId: {}",
+                createdOrder.getOrderId(), user.getUserId());
 
         return createdOrder;
     }

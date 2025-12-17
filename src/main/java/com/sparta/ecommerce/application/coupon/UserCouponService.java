@@ -1,6 +1,5 @@
 package com.sparta.ecommerce.application.coupon;
 
-import com.sparta.ecommerce.application.coupon.event.CouponUsageFailedEvent;
 import com.sparta.ecommerce.application.coupon.event.CouponUsedSuccessEvent;
 import com.sparta.ecommerce.application.order.OrderService;
 import com.sparta.ecommerce.application.order.event.OrderCreatedEvent;
@@ -114,6 +113,33 @@ public class UserCouponService {
     }
 
     /**
+     * 쿠폰 복구 (주문 실패 시 보상 트랜잭션)
+     *
+     * 주문 실패 시 사용된 쿠폰을 미사용 상태로 복구합니다.
+     *
+     * @param userId 사용자 ID
+     * @param userCouponId 복구할 쿠폰 ID
+     */
+    @Transactional
+    public void restoreCoupon(Long userId, Long userCouponId) {
+        try {
+            log.debug("쿠폰 복구 시작 - UserId: {}, UserCouponId: {}", userId, userCouponId);
+
+            UserCoupon userCoupon = userCouponRepository.findById(userCouponId)
+                    .orElseThrow(() -> new CouponException(CouponErrorCode.USER_COUPON_NOT_FOUND));
+
+            userCoupon.cancelUsage();
+            updateUserCoupon(userCoupon);
+
+            log.info("쿠폰 복구 완료 - UserId: {}, UserCouponId: {}", userId, userCouponId);
+        } catch (Exception e) {
+            log.error("쿠폰 복구 실패 - UserId: {}, UserCouponId: {}, Error: {}",
+                    userId, userCouponId, e.getMessage(), e);
+            throw new RuntimeException("쿠폰 복구 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 주문 생성 이벤트를 통한 쿠폰 사용 처리
      *
      * 쿠폰이 없는 경우에도 성공 이벤트를 발행합니다.
@@ -131,15 +157,9 @@ public class UserCouponService {
             return;
         }
 
-        // 쿠폰이 없는 주문인 경우 바로 성공 이벤트 발행
+        // 쿠폰이 없는 주문인 경우
         if (event.userCouponId() == null) {
             log.debug("쿠폰 없는 주문 - OrderId: {}", event.orderId());
-
-            // 조율 서비스를 위해 성공 이벤트 발행
-            eventPublisher.publishEvent(new CouponUsedSuccessEvent(
-                    event.orderId(),
-                    event.userId()
-            ));
             return;
         }
 
@@ -151,25 +171,11 @@ public class UserCouponService {
 
             log.info("쿠폰 사용 성공 - OrderId: {}", event.orderId());
 
-            // 쿠폰 사용 성공 이벤트 발행 (조율 서비스에서 받음)
-            eventPublisher.publishEvent(new CouponUsedSuccessEvent(
-                    event.orderId(),
-                    event.userId()
-            ));
-
         } catch (Exception e) {
             log.error("쿠폰 사용 처리 실패 - UserCouponId: {}, OrderId: {}, Error: {}",
                     event.userCouponId(), event.orderId(), e.getMessage(), e);
-
-            // 쿠폰 사용 실패 이벤트 발행 (OrderService에서 주문 상태 변경 및 보상 트랜잭션 처리)
-            eventPublisher.publishEvent(new CouponUsageFailedEvent(
-                    event.orderId(),
-                    event.userId(),
-                    event.userCouponId(),
-                    event.finalAmount(),
-                    e.getMessage(),
-                    event.cartItems()
-            ));
+            // Kafka Consumer에서 예외를 처리하도록 예외를 다시 던짐
+            throw new RuntimeException("쿠폰 사용 실패: " + e.getMessage(), e);
         }
     }
 

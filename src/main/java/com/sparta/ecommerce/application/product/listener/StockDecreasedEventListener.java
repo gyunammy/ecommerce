@@ -26,9 +26,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * 2. ProductService의 재고 차감 메서드 호출 (락 포함)
  * 3. ProductService에서 성공 시: StockReservedEvent 발행
  * 4. ProductService에서 실패 시: StockDeductionFailedEvent 발행
+ *
+ * NOTE: Kafka를 사용하도록 변경되어 비활성화됨 (OrderCreatedEventConsumer 사용)
  */
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class StockDecreasedEventListener {
 

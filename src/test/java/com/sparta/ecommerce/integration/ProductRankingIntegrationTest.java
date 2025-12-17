@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -37,7 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
     "coupon.queue.consumer.enabled=false"  // 쿠폰 발급 Queue Consumer 비활성화
 })
 @Testcontainers
-@org.springframework.transaction.annotation.Transactional
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class ProductRankingIntegrationTest {
 
@@ -51,6 +51,9 @@ class ProductRankingIntegrationTest {
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
+    @Container
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"));
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", mysql::getJdbcUrl);
@@ -58,6 +61,7 @@ class ProductRankingIntegrationTest {
         registry.add("spring.datasource.password", mysql::getPassword);
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
 
         // Redis 연결 풀 증가
         registry.add("spring.data.redis.lettuce.pool.max-active", () -> "50");
@@ -122,7 +126,8 @@ class ProductRankingIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 주문 시 판매량 랭킹이 Redis에 정확히 집계된다")
-    void productRanking_shouldBeUpdatedCorrectly() {
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    void productRanking_shouldBeUpdatedCorrectly() throws InterruptedException {
         // given: 각 사용자가 다른 상품을 다른 수량으로 주문
         LocalDateTime now = LocalDateTime.now();
 
@@ -137,6 +142,20 @@ class ProductRankingIntegrationTest {
         // User3 → 상품C 10개 주문
         cartRepository.save(new CartItem(3L, 3L, product3Id, 10, now, now));
         createOrderUseCase.createOrder(3L, null);
+
+        // Kafka 이벤트 처리를 위한 대기 - polling으로 랭킹 데이터 확인
+        long waitStart = System.currentTimeMillis();
+        long maxWaitTime = 15000; // 15초
+        boolean rankingUpdated = false;
+
+        while (System.currentTimeMillis() - waitStart < maxWaitTime) {
+            Integer count = productRankingRepository.getSalesCount(product3Id);
+            if (count != null && count > 0) {
+                rankingUpdated = true;
+                break;
+            }
+            Thread.sleep(200);
+        }
 
         // when: 상위 3개 랭킹 조회
         Map<Long, Integer> topRankings = productRankingRepository.getTopRankings(3);
@@ -154,7 +173,8 @@ class ProductRankingIntegrationTest {
 
     @Test
     @DisplayName("통합 테스트 - 여러 번 주문 시 판매량이 누적된다")
-    void productRanking_shouldAccumulateSales() {
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    void productRanking_shouldAccumulateSales() throws InterruptedException {
         // given: 같은 상품을 여러 번 주문
         LocalDateTime now = LocalDateTime.now();
 
@@ -165,6 +185,20 @@ class ProductRankingIntegrationTest {
         // User2 → 상품A 3개 주문
         cartRepository.save(new CartItem(2L, 2L, product1Id, 3, now, now));
         createOrderUseCase.createOrder(2L, null);
+
+        // Kafka 이벤트 처리를 위한 대기 - polling으로 랭킹 데이터 확인
+        long waitStart = System.currentTimeMillis();
+        long maxWaitTime = 15000; // 15초
+        boolean rankingUpdated = false;
+
+        while (System.currentTimeMillis() - waitStart < maxWaitTime) {
+            Integer count = productRankingRepository.getSalesCount(product1Id);
+            if (count != null && count >= 5) {
+                rankingUpdated = true;
+                break;
+            }
+            Thread.sleep(200);
+        }
 
         // when: 판매량 조회
         Integer totalSales = productRankingRepository.getSalesCount(product1Id);

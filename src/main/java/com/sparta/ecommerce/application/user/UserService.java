@@ -3,7 +3,6 @@ package com.sparta.ecommerce.application.user;
 import com.sparta.ecommerce.application.order.OrderService;
 import com.sparta.ecommerce.application.order.event.OrderCreatedEvent;
 import com.sparta.ecommerce.application.user.event.PointDeductedSuccessEvent;
-import com.sparta.ecommerce.application.user.event.PointDeductionFailedEvent;
 import com.sparta.ecommerce.domain.order.entity.Order;
 import com.sparta.ecommerce.domain.user.UserRepository;
 import com.sparta.ecommerce.domain.user.entity.User;
@@ -62,24 +61,11 @@ public class UserService {
             log.info("포인트 차감 처리 완료 - UserId: {}, Amount: {}",
                     event.userId(), event.finalAmount());
 
-            // 포인트 차감 성공 이벤트 발행
-            eventPublisher.publishEvent(new PointDeductedSuccessEvent(
-                    event.orderId(),
-                    event.userId()
-            ));
-
         } catch (Exception e) {
             log.error("포인트 차감 처리 실패 - UserId: {}, OrderId: {}, Amount: {}, Error: {}",
                     event.userId(), event.orderId(), event.finalAmount(), e.getMessage(), e);
-
-            // 포인트 차감 실패 이벤트 발행
-            eventPublisher.publishEvent(new PointDeductionFailedEvent(
-                    event.orderId(),
-                    event.userId(),
-                    event.finalAmount(),
-                    e.getMessage(),
-                    event.cartItems()
-            ));
+            // Kafka Consumer에서 예외를 처리하도록 예외를 다시 던짐
+            throw new RuntimeException("포인트 차감 실패: " + e.getMessage(), e);
         }
     }
 

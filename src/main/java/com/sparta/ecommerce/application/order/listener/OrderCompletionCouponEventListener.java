@@ -11,9 +11,11 @@ import org.springframework.stereotype.Component;
  * 주문 완료를 위한 쿠폰 사용 성공 이벤트 리스너
  *
  * CouponUsedSuccessEvent를 받아서 OrderCompletionCoordinator에 쿠폰 사용 완료를 알립니다.
+ *
+ * NOTE: Kafka로 통일되어 비활성화됨 - OrderCreatedEventConsumer에서 직접 처리
  */
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class OrderCompletionCouponEventListener {
 
