@@ -75,7 +75,7 @@ class CreateOrderUseCaseTest {
     private TaskExecutor taskExecutor;
 
     @Mock
-    private org.springframework.context.ApplicationEventPublisher applicationEventPublisher;
+    private org.springframework.kafka.core.KafkaTemplate<String, OrderCreatedEvent> orderCreatedKafkaTemplate;
 
     @InjectMocks
     private CreateOrderUseCase createOrderUseCase;
@@ -359,9 +359,9 @@ class CreateOrderUseCaseTest {
         // 2. 장바구니가 클리어되었는지 확인
         verify(cartService).clearCart(userId);
 
-        // 3. OrderCreatedEvent가 올바른 데이터로 발행되었는지 확인
+        // 3. OrderCreatedEvent가 Kafka로 올바르게 발행되었는지 확인
         ArgumentCaptor<OrderCreatedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCreatedEvent.class);
-        verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+        verify(orderCreatedKafkaTemplate).send(eq("order-created-topic"), eventCaptor.capture());
 
         OrderCreatedEvent capturedEvent = eventCaptor.getValue();
         assertThat(capturedEvent.userId()).isEqualTo(userId);
@@ -442,9 +442,9 @@ class CreateOrderUseCaseTest {
         // 2. 장바구니가 클리어되었는지 확인
         verify(cartService).clearCart(userId);
 
-        // 3. OrderCreatedEvent가 올바른 데이터로 발행되었는지 확인
+        // 3. OrderCreatedEvent가 Kafka로 올바르게 발행되었는지 확인
         ArgumentCaptor<OrderCreatedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCreatedEvent.class);
-        verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
+        verify(orderCreatedKafkaTemplate).send(eq("order-created-topic"), eventCaptor.capture());
 
         OrderCreatedEvent capturedEvent = eventCaptor.getValue();
         assertThat(capturedEvent.userId()).isEqualTo(userId);

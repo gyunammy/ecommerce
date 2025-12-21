@@ -13,8 +13,10 @@ import org.springframework.stereotype.Component;
  *
  * 주문 생성 완료 이벤트를 수신하여 상품 판매량 랭킹을 업데이트합니다.
  * 비동기로 실행되어 주문 생성 프로세스와 분리됩니다.
+ *
+ * NOTE: Kafka를 사용하도록 변경되어 비활성화됨 (OrderCreatedEventConsumer 사용)
  */
-@Component
+//@Component
 @RequiredArgsConstructor
 public class OrderCreatedEventListener {
 

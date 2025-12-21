@@ -1,220 +1,288 @@
-# 분산 트랜잭션 처리 설계 문서
- 
-## 1. 배경 및 목적
+# Apache Kafka 기초 개념 정리
 
+## 1. Kafka란 무엇인가
 
-서비스 확장에 따라 애플리케이션 서버와 데이터베이스를 도메인 단위로 분리하는 것은 일반적인 아키텍처 진화 방식이다. 예를 들어 다음과 같이 독립된 서비스 및 데이터베이스가 구성될 수 있다.
+Apache Kafka는 **분산 이벤트 스트리밍 플랫폼**이다. 대량의 데이터를 **실시간으로 수집, 저장, 전달**하기 위해 설계되었으며, 로그 수집, 이벤트 기반 아키텍처, 스트림 처리의 핵심 인프라로 활용된다.
 
-- 주문 서비스 → 주문 DB
+Kafka의 핵심 목적은 다음과 같다.
 
-- 상품 서비스 → 상품 DB
-
-- 사용자 서비스 → 사용자 DB
-
-- 쿠폰 서비스 → 쿠폰 DB
-
-도메인 별 분리는 다음과 같은 이점을 제공한다.
-
-1. 독립적인 확장성 확보
-2. 장애 격리를 통한 안정성 향상
-3. 개발팀 단위의 독립 배포 및 운영 가능
-
-그러나 물리적 분리가 발생하면 단일 DB 트랜잭션 기반의 일관성 보장이 불가능해지고, 분산 트랜잭션 문제가 필연적으로 발생하게 된다.
+* 높은 처리량
+* 낮은 지연 시간
+* 장애 허용
+* 데이터 영속성
+* 재처리 가능성
 
 ---
 
-## 2. 분산 환경에서의 트랜잭션 문제
+## 2. Kafka가 해결하려는 문제
 
-아래는 서비스와 데이터베이스가 분리된 구조를 나타낸다.
+전통적인 동기식 통신(HTTP/RPC)은 다음과 같은 한계를 가진다.
+
+* 서비스 간 강한 결합
+* 장애 전파
+* 트래픽 급증 시 병목 발생
+* 비동기 처리 및 재처리 어려움
+
+Kafka는 **이벤트 기반 비동기 통신**을 통해 위 문제를 해결한다.
+
+---
+
+## 3. Kafka 핵심 구성 요소
 
 ```mermaid
 flowchart LR
-subgraph OrderServer[주문 서버]
-OrderSvc[주문 서비스]
-end
+    Producer[Producer]
+    SourceConn[Source Connector]
 
-    subgraph OrderDBServer[주문 DB 서버]
-        OrderDB[(주문 DB)]
+
+    subgraph Cluster[Kafka Cluster]
+        subgraph Broker1[Broker]
+            subgraph TopicA[Topic A]
+                P0[Partition 0]
+                P1[Partition 1]
+                P2[Partition 2]
+            end
+            TopicB[Topic B]
+            TopicC[Topic C]
+        end
+        Broker2[Broker]
+        Broker3[Broker]
     end
 
-    subgraph ProductServer[상품 서버]
-        ProductSvc[상품 서비스]
-    end
 
-    subgraph ProductDBServer[상품 DB 서버]
-        ProductDB[(상품 DB)]
-    end
+    Consumer[Consumer]
+    SinkConn[Sink Connector]
 
-    subgraph UserServer[사용자 서버]
-        UserSvc[사용자 서비스]
-    end
 
-    subgraph UserDBServer[사용자 DB 서버]
-        UserDB[(사용자 DB)]
-    end
+    Producer -->|produce| TopicA
+    SourceConn -->|produce| TopicA
 
-    subgraph CouponServer[쿠폰 서버]
-        CouponSvc[쿠폰 서비스]
-    end
 
-    subgraph CouponDBServer[쿠폰 DB 서버]
-        CouponDB[(쿠폰 DB)]
-    end
-
-    %% 서비스별 DB 연결만 표시
-    OrderSvc --> OrderDB
-    ProductSvc --> ProductDB
-    UserSvc --> UserDB
-    CouponSvc --> CouponDB
+    TopicA -->|consume| Consumer
+    Consumer --> SinkConn
 ```
 
-도메인 별 서버/DB가 분리되면 각 서비스는 “자신의 DB에 대한 로컬 트랜잭션만” 수행할 수 있다. 하나의 비즈니스 요청이 여러 서비스를 거쳐 처리될 때 다음 문제가 발생한다.
+### 3.1 Broker
 
-예시 시나리오: 주문 생성
-
-1) 주문 서비스 → 주문 DB에 주문 생성
-2) 상품 서비스 → 상품 DB에서 재고 차감
-3) 쿠폰 서비스 → 쿠폰 DB에서 쿠폰 사용 처리
-
-이 작업들은 서로 다른 DB, 서로 다른 로컬 트랜잭션으로 동작한다. 그 결과 다음과 같은 문제가 발생한다.
-
-### 분산 트랜잭션의 주요 문제
-1) 2PC(2-Phase Commit) 비현실성
-
-    서비스 간 네트워크/락/장애 등의 변수를 고려하면 2PC는 운영 비용과 성능 저하가 크고, 사실상 실무에서 채택하기 어렵다.
+* Kafka 서버 인스턴스
+* 여러 broker가 모여 **Kafka Cluster**를 구성
+* 데이터를 Producer로부터 받아 offset 지정 후 디스크(토픽)에 저장하고, 
+* Consumer의 Partition read에 응답해 디스크에 저장된 메시지를 전달하는 중개자(Broker) 역할 
 
 
-2) 단일 트랜잭션 불가능   
-    “주문 생성은 성공했지만 재고 차감 실패”와 같은 상태 불일치 발생 가능.
+#### Cluster 내에 한개씩 존재하는 역할 Broker
 
+* **Controller**
+    * 클러스터 내 브로커 상태를 관리하고 파티션 Leader 선출을 담당
+    * 장애 발생 시 다른 브로커가 Controller 역할을 이어받음
 
-3) 보상 트랜잭션 필요   
-    Saga 패턴과 같은 보상 로직을 구현해야 하며, 이는 개발 복잡성을 크게 증가시킨다.
+* **Coordinator**
+    * Consumer Group을 관리하고 파티션 할당 및 Rebalance 수행
+    * Coordinator 장애 시 다른 브로커가 역할을 승계하며 Rebalance 발생
+  
+### 3.2 Topic
 
+* 주제별로 관련된 이벤트를 분류하는 논리적 단위
+* 하나의 topic은 N개의 **partition**으로 구성됨
 
-4) 강한 일관성 유지 어려움   
-    결국 Eventual Consistency 모델을 수용해야 하는 구조가 된다.
+### 3.3 Partition
 
---- 
+* topic을 물리적으로 나눈 단위
+* Kafka의 병렬성과 처리량의 핵심 요소
+* partition 내부에서는 **메시지 순서 보장**
+* 서로 다른 partition 간에는 순서 보장 없음
 
-## 3. 해결책: 메시지 브로커 기반 비동기 이벤트 처리
+### 3.4 Offset
 
-분산 트랜잭션 문제를 해결하기 위해, 메시지 브로커 기반의 비동기 이벤트 처리 방식을 적용한다.
-Kafka는 이 패턴을 지원하기 위한 핵심 기능을 제공한다.
-
-### Kafka가 제공하는 핵심 기능
-1) 높은 처리량 및 확장성    
-    주문·쿠폰 발급 등 고빈도 이벤트 환경에서도 병목 없이 처리 가능하다.
-
-
-2) 로그 기반 저장(Commit Log)으로 메시지 영속성 보장   
-    브로커 또는 서비스 장애가 발생해도 메시지를 유실하지 않는다.
-
-
-3) 파티셔닝을 통한 순서 보장 (Partition Ordering)   
-    동일 키(ex: orderId, couponId)로 파티션을 고정하면 파티션 내 이벤트는 순서가 보장된다.
-    주문 → 결제 → 배송 같은 순서 의존적 프로세스 처리에 유효하다.
-
-
-4) 내결함성 및 클러스터링   
-    리더–팔로워 구조를 통해 장애 복구가 자동으로 이루어진다.
-
-
-5) 재처리(Replay) 지원   
-    Consumer의 오프셋을 이동시키면 메시지를 재생할 수 있어 장애 상황 또는 로직 수정 후 재처리가 가능하다.
-
-Kafka를 활용하면 위의 기능을 통해 네트워크 장애, 부분 실패, 순서 불일치 등 분산 환경에서 흔히 발생하는 문제들을 제어하며,
-비동기적이고 확장 가능한 방식으로 트랜잭션 일관성을 보장할 수 있다.
+* partition 내에서 메시지의 고유한 위치
+* 단조(값이 절대 줄어들지 않고, 항상 이전 값보다 커지거나 같음) 증가하는 값
+* Kafka는 offset을 통해 메시지 소비 위치를 관리
 
 ---
 
-## 4. Kafka를 통한 분산 트랜잭션 해결 전략
+## 4. Producer
 
-```mermaid
-sequenceDiagram
-    autonumber
+* Kafka에 메시지를 발행(publish)하는 클라이언트
+* 메시지는 특정 topic으로 전송됨
 
-    participant User as 사용자
-    participant OrderSvc as 주문 서비스
-    participant Kafka as Kafka Broker
-    participant ProductSvc as 상품 서비스
-    participant CouponSvc as 쿠폰 서비스
+### 4.1 메시지 구조
 
-%% 정상 흐름: 주문 생성
-    User ->> OrderSvc: 주문 생성 요청
-    OrderSvc ->> OrderSvc: 로컬 트랜잭션: 주문 생성
-    OrderSvc ->> Kafka: OrderCreated 이벤트 발행
+* Key (선택)
+* Value (실제 데이터)
 
-    Note over Kafka: 비동기 이벤트 라우팅
+### 4.2 Key의 역할
 
-%% 상품 서비스 처리
-    Kafka -->> ProductSvc: OrderCreated 이벤트 전달
-    ProductSvc ->> ProductSvc: 로컬 트랜잭션: 재고 차감 시도
+* 동일한 key를 가진 메시지는 **같은 partition**으로 전송됨
+* 메시지 순서 보장이 필요한 경우 key 사용이 중요
 
-    alt 재고 차감 성공
-        ProductSvc ->> Kafka: StockReduced 이벤트 발행
-    else 재고 차감 실패
-        ProductSvc ->> ProductSvc: 로컬 재시도(1~N 회)
-        alt 재시도 후에도 실패
-            ProductSvc ->> Kafka: StockReduceFailed 이벤트 발행
-        end
-    end
+---
 
-%% 쿠폰 서비스 처리
-    Kafka -->> CouponSvc: OrderCreated 이벤트 전달
-    CouponSvc ->> CouponSvc: 로컬 트랜잭션: 쿠폰 사용 처리
+## 5. Consumer
 
-    alt 쿠폰 사용 성공
-        CouponSvc ->> Kafka: CouponUsed 이벤트 발행
-    else 쿠폰 사용 실패
-        CouponSvc ->> CouponSvc: 로컬 재시도(1~N 회)
-        alt 재시도 후에도 실패
-            CouponSvc ->> Kafka: CouponUseFailed 이벤트 발발
-        end
-    end
+* 이벤트가 저장되어있는 topic에서 이벤트를 읽어오는 클라이언트
 
-%% 보상(Compensation) 흐름
-%% 재고 또는 쿠폰 서비스에서 실패 발생 시 주문 취소 보상 실행
-    Kafka -->> OrderSvc: StockReduceFailed or CouponUseFailed
-    OrderSvc ->> OrderSvc: 보상 트랜잭션: 주문 취소 처리
-    OrderSvc ->> Kafka: OrderCanceled 이벤트 발행
+### 5.1 Consumer Group
 
-    Note over Kafka,User: 장애 시 모든 이벤트는 오프셋 기반 재처리 가능<br/>보상까지 포함해 최종적 일관성(Eventual Consistency) 확보
-```
+* 하나의 토픽에 발행된 메세지를 여러 서비스가 컨슘하기 위해 Consumer Group을 설정
+* 하나의 group 내에서 partition은 **consumer 1개에만 할당**
+* 이를 통해 병렬 처리와 확장성 확보
 
-### 1. 정상 흐름
+| Partition 수 | Consumer 수 | 동작                         |
+| ----------- | ---------- |----------------------------|
+| 3           | 1          | 1 consumer가 모두 처리          |
+| 3           | 3          | 각 consumer가 1 partition 처리 |
+| 3           | 5          | 2개의 consumer는 미할당 상태       |
 
-주문 서비스는 자신의 로컬 트랜잭션을 정상적으로 완료   
-Kafka에 OrderCreated 이벤트 발행
-상품·쿠폰 서비스는 이벤트를 소비하고 각자 로컬 트랜잭션 처리
+### 5.2 Offset 관리
 
-### 2. 실패 흐름: 상품 서비스(재고 차감) 실패
+* Consumer는 읽어온 offset을 기록하여 자체적으로 읽은데이터의 위치를 추적
+* * offset은 Kafka 내부 topic(`__consumer_offsets`)에 저장됨
+* 이를 통해 Consumer는 중단된 지점에서 데이터를 다시 읽거나 특정 범위의 데이터만 읽어올 수 있다.
 
-상품 서비스의 재고 차감 로직이 실패하면   
-자체 재시도 수행 (예: 네트워크 이슈, Lock 충돌 등)   
-여러 번 재시도 후에도 실패 시 StockReduceFailed 이벤트 발행
+---
 
-실패 이벤트는 보상 트랜잭션의 트리거가 된다.
+## 6. 메시지 전달 보장 수준
 
-### 3. 실패 흐름: 쿠폰 서비스 실패
+Kafka는 다음과 같은 전달 보장 전략을 제공한다.
 
-동일하게 로컬 트랜잭션 실패 → 재시도 → 최종 실패 시 CouponUseFailed 이벤트 발행
+### 6.1 At Most Once
 
-### 4. 보상(Compensation) 트랜잭션 흐름
+* 메시지가 최대 한 번 전달
+* 유실 가능성 존재
 
-StockReduceFailed 혹은 CouponUseFailed 중 하나라도 Kafka에 들어오면,   
-주문 서비스는 보상 트랜잭션을 수행한다.   
-주문 상태를 "취소"로 변경 후 취소 이벤트(OrderCanceled) 발행
+### 6.2 At Least Once (기본)
 
-이후 필요한 서비스들은 취소 이벤트 기반 후속 작업 수행(재고 복원 등)
+* 메시지가 최소 한 번 전달
+* 중복 가능성 존재
 
-### 5. Kafka 기반 재처리(Reprocessing)
+### 6.3 Exactly Once
 
-Kafka는 모든 이벤트를 Commit Log에 저장하므로 다음과 같은 상황에도 재시도가 가능하며
-**최종적 일관성(Eventual Consistency)**을 유지할 수 있게 된다.
+* 메시지가 정확히 한 번만 처리
+* 트랜잭션, idempotent producer 설정 필요
 
-- 서비스 장애
-- Consumer 다운
-- 네트워크 오류
-- 일시적 DB 장애
+---
 
+## 7. Kafka의 영속성 구조
+
+* 메시지는 디스크에 저장됨
+* 로그 파일은 append-only 구조
+* OS page cache를 활용하여 높은 성능 유지
+
+### 7.1 Retention 정책
+
+* 일정 시간(retention.ms)
+* 일정 크기(retention.bytes)
+* 조건 충족 시 오래된 메시지 삭제
+
+---
+## 8. Replication 기반 장애 대응 구조
+
+### 8.1 Replication Factor (복제 전략)
+
+Replication Factor는 하나의 partition이 **몇 개의 broker에 복제되어 저장되는지**를 의미한다.
+
+* replication factor = 3
+
+    * 동일한 partition 데이터가 서로 다른 3개의 broker에 저장됨
+* 각 replica는 장애 격리를 위해 서로 다른 broker에 분산 배치됨
+
+이 복제 전략을 통해 Kafka는 broker 장애 발생 시에도
+데이터를 유지하고 서비스를 지속할 수 있는 기반을 마련한다.
+
+### 8.2 Leader / Follower 구조 (역할 분리)
+
+Kafka는 각 partition에 대해 **Leader / Follower 구조**를 사용한다.
+
+* **Leader**
+
+    * 해당 partition에 대한 모든 read / write 요청을 처리
+    * producer와 consumer는 항상 leader와 통신
+
+* **Follower**
+
+    * leader의 데이터를 지속적으로 복제
+    * 직접적인 read / write 요청은 처리하지 않음
+    * leader 장애 시 새로운 leader 후보가 됨
+
+이 구조를 통해 Kafka는
+단일 쓰기 지점을 유지하면서도 장애에 대비할 수 있다.
+
+### 8.3 ISR (In-Sync Replicas) 기반 Leader 선출
+
+ISR(In-Sync Replicas)는
+**leader와 충분히 동기화된 replica들의 집합**을 의미한다.
+
+* leader는 항상 ISR에 포함됨
+* follower는 leader의 최신 offset을 일정 시간 내에 따라잡아야 ISR에 포함됨
+
+Kafka는 장애 발생 시
+**ISR에 포함된 replica 중에서만 leader를 선출**한다.
+이를 통해 데이터 유실 가능성을 최소화한다.
+
+### 8.4 장애 발생 시 전체 동작 흐름
+
+1. Leader broker 장애 발생
+2. Kafka Controller가 장애 감지
+3. ISR에 포함된 follower 중 하나를 새로운 leader로 선출
+4. producer / consumer는 자동으로 새 leader와 통신
+
+이 과정은 자동으로 수행되며,
+대부분의 경우 서비스 중단 없이 처리된다.
+
+### 8.5 정리
+
+* Replication Factor는 장애 대응의 물리적 기반을 제공한다.
+* Leader / Follower 구조는 역할을 분리하여 일관성을 유지한다.
+* ISR은 안전한 leader 선출을 위한 기준으로 사용된다.
+
+Kafka의 장애 대응은
+**복제 + 역할 분리 + ISR 기반 선출**이 결합된 단일한 구조이다.
+
+
+---
+
+## 9. Kafka의 장점과 한계
+
+### 9.1 장점
+
+* 매우 높은 처리량
+* 느슨한 결합의 이벤트 기반 아키텍처
+* 재처리 가능
+* 확장성과 내결함성 우수
+
+### 9.2 한계
+
+* 정확한 전역 순서 보장 불가
+* 운영 및 모니터링 복잡도
+* 단순 메시지 큐 대비 학습 비용 높음
+
+---
+
+## 10. Kafka의 주요 사용 사례
+
+* 이벤트 기반 마이크로서비스
+* 로그 수집 및 분석
+* CDC (Change Data Capture)
+* 실시간 스트림 처리
+* 비동기 트랜잭션 연계 (Saga 패턴)
+
+---
+
+## 11. Kafka와 메시지 큐의 차이
+
+| 구분      | Kafka  | 전통적 MQ   |
+|---------| ------ | -------- |
+| 메시지 저장  | 디스크 기반 | 메모리 중심   |
+| 재처리     | 가능     | 제한적      |
+| * 소비 모델 | Pull   | Push     |
+| 처리량     | 매우 높음  | 상대적으로 낮음 |
+
+**소비 모델**이란 메시지를 소비하는 주체와 전달 방식에 대한 구조이며, Kafka는 consumer가 직접 메시지를 가져오는 Pull 방식, 전통적 MQ는 broker가 메시지를 전달하는 Push 방식을 사용한다.
+
+---
+
+## 12. 정리
+
+Kafka는 단순한 메시지 브로커가 아니라 **이벤트 스트리밍 플랫폼**이다. 분산 환경에서 데이터 흐름을 안정적으로 처리하고, 서비스 간 결합도를 낮추며, 장애와 재처리를 고려한 아키텍처를 구성하는 데 핵심적인 역할을 한다.
+
+실무에서는 Kafka 자체보다도 **어떤 이벤트를 발행하고, 어디까지를 트랜잭션 경계로 볼 것인가**에 대한 설계가 더 중요하다.

@@ -14,9 +14,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *
  * OrderCreatedEvent를 받아서 병렬로 사용자 포인트를 차감합니다.
  * 실제 처리 로직은 UserService.deductPointForOrder()에 위임됩니다.
+ *
+ * NOTE: Kafka를 사용하도록 변경되어 비활성화됨 (OrderCreatedEventConsumer 사용)
  */
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class PointDeductedEventListener {
 

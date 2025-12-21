@@ -18,6 +18,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,15 +36,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 선착순 쿠폰 발급 통합 테스트
+ * 선착순 쿠폰 발급 통합 테스트 (Kafka 기반)
  *
- * Controller → UseCase → Service → Repository 전체 레이어를 통합하여 테스트
- * TestContainers를 사용하여 실제 MySQL 환경에서 동시성 제어 검증
+ * UseCase → Kafka Producer → Kafka Consumer → Service → Repository 전체 플로우를 통합하여 테스트
+ * TestContainers를 사용하여 실제 MySQL, Redis, Kafka 환경에서 동시성 제어 검증
  */
 @SpringBootTest(properties = {
-    "spring.task.scheduling.enabled=false",  // 테스트 시 스케줄러 비활성화
-    "app.async.enabled=false"  // 테스트 시 비동기 작업을 동기로 실행
-    // 주의: 이 테스트는 Consumer를 테스트하므로 coupon.queue.consumer.enabled는 활성화(기본값)
+    "spring.task.scheduling.enabled=false"  // 테스트 시 스케줄러 비활성화
 })
 @Testcontainers
 class CouponIssueIntegrationTest {
@@ -57,6 +56,9 @@ class CouponIssueIntegrationTest {
     @Container
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
+
+    @Container
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"));
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -73,6 +75,14 @@ class CouponIssueIntegrationTest {
         registry.add("spring.data.redis.lettuce.pool.max-active", () -> "50");
         registry.add("spring.data.redis.lettuce.pool.max-idle", () -> "50");
         registry.add("spring.data.redis.lettuce.pool.min-idle", () -> "10");
+
+        // Kafka 설정
+        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+        registry.add("spring.kafka.consumer.group-id", () -> "test-group");
+        registry.add("spring.kafka.consumer.auto-offset-reset", () -> "earliest");
+
+        // Kafka Consumer Concurrency 설정 (병렬 처리)
+        registry.add("spring.kafka.listener.concurrency", () -> "3");
     }
 
     @Autowired
@@ -150,22 +160,22 @@ class CouponIssueIntegrationTest {
     @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void issueCoupon_concurrency_integration() throws InterruptedException {
         // given
-        AtomicInteger queueAddCount = new AtomicInteger(0);
-        AtomicInteger queueFailCount = new AtomicInteger(0);
+        AtomicInteger kafkaPublishCount = new AtomicInteger(0);
+        AtomicInteger publishFailCount = new AtomicInteger(0);
 
         ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
         CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
 
-        // when: 100명의 사용자가 동시에 쿠폰 발급 요청 (Queue에 추가)
+        // when: 100명의 사용자가 동시에 쿠폰 발급 요청 (Kafka로 메시지 발행)
         for (int i = 0; i < THREAD_COUNT; i++) {
             long userId = userIds.get(i);
             executorService.submit(() -> {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
-                    queueAddCount.incrementAndGet();
+                    kafkaPublishCount.incrementAndGet();
                 } catch (CouponException e) {
                     // 중복 발급 체크에서 실패
-                    queueFailCount.incrementAndGet();
+                    publishFailCount.incrementAndGet();
                 } catch (Exception e) {
                     System.err.println("Unexpected error for userId " + userId + ": " + e.getMessage());
                     e.printStackTrace();
@@ -175,40 +185,73 @@ class CouponIssueIntegrationTest {
             });
         }
 
-        // Queue 추가 완료 대기
+        // Kafka 발행 완료 대기
         boolean completed = latch.await(60, TimeUnit.SECONDS);
         executorService.shutdown();
         assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
 
-        System.out.println("Queue 추가 성공: " + queueAddCount.get() + ", 실패: " + queueFailCount.get());
+        System.out.println("Kafka 발행 성공: " + kafkaPublishCount.get() + ", 실패: " + publishFailCount.get());
 
-        // Consumer가 Queue를 모두 처리할 때까지 대기 (최대 60초)
-        int maxWaitSeconds = 60;
+        // Kafka Consumer가 메시지를 모두 처리할 때까지 대기 (최대 120초)
+        // 실제 발급된 UserCoupon 수를 확인하여 더 정확하게 대기
+        int maxWaitSeconds = 120;
+        int actualIssuedCount = 0;
         for (int i = 0; i < maxWaitSeconds; i++) {
             Thread.sleep(1000);
+
+            // 실제 발급된 UserCoupon 수 확인
+            List<UserCoupon> currentUserCoupons = userCouponRepository.findAll().stream()
+                    .filter(uc -> uc.getCouponId().equals(couponId))
+                    .toList();
+            actualIssuedCount = currentUserCoupons.size();
+
             Coupon coupon = couponRepository.findById(couponId).orElseThrow();
-            if (coupon.getIssuedQuantity() >= COUPON_STOCK) {
-                System.out.println("Consumer 처리 완료: " + coupon.getIssuedQuantity() + "개 발급");
+
+            // 재고가 소진되었거나, 실제 발급 수가 재고에 도달한 경우 대기 종료
+            if (actualIssuedCount >= COUPON_STOCK || coupon.getIssuedQuantity() >= COUPON_STOCK) {
+                System.out.println("Kafka Consumer 처리 완료 - " +
+                        "실제 발급: " + actualIssuedCount + "개, " +
+                        "issuedQuantity: " + coupon.getIssuedQuantity() + "개");
                 break;
             }
+
+            // 5초마다 진행 상황 출력
+            if (i % 5 == 0 && i > 0) {
+                System.out.println("대기 중... (" + i + "초 경과) - " +
+                        "실제 발급: " + actualIssuedCount + "개, " +
+                        "issuedQuantity: " + coupon.getIssuedQuantity() + "개");
+            }
+
             if (i == maxWaitSeconds - 1) {
-                org.junit.jupiter.api.Assertions.fail("Consumer 처리 시간 초과");
+                System.err.println("Kafka Consumer 처리 시간 초과 - " +
+                        "실제 발급: " + actualIssuedCount + "개, " +
+                        "issuedQuantity: " + coupon.getIssuedQuantity() + "개");
+                org.junit.jupiter.api.Assertions.fail("Kafka Consumer 처리 시간 초과");
             }
         }
 
-        // then: 검증
-        // 1. 쿠폰의 발급 수량이 정확히 50개
-        Coupon issuedCoupon = couponRepository.findById(couponId).orElseThrow();
-        assertThat(issuedCoupon.getIssuedQuantity()).isEqualTo(COUPON_STOCK);
+        // 최종 검증 전 추가 대기 (진행 중인 트랜잭션 완료 대기)
+        Thread.sleep(2000);
 
-        // 2. UserCoupon 테이블에 정확히 50개의 레코드 생성
+        // then: 검증
+        // 1. UserCoupon 테이블에 정확히 50개의 레코드 생성
         List<UserCoupon> issuedUserCoupons = userCouponRepository.findAll().stream()
                 .filter(uc -> uc.getCouponId().equals(couponId))
                 .toList();
-        assertThat(issuedUserCoupons).hasSize(COUPON_STOCK);
+        assertThat(issuedUserCoupons)
+                .as("UserCoupon 테이블에 정확히 " + COUPON_STOCK + "개의 레코드가 생성되어야 함")
+                .hasSize(COUPON_STOCK);
+
+        // 2. 쿠폰의 발급 수량이 정확히 50개
+        Coupon issuedCoupon = couponRepository.findById(couponId).orElseThrow();
+        assertThat(issuedCoupon.getIssuedQuantity())
+                .as("쿠폰의 issuedQuantity가 정확히 " + COUPON_STOCK + "개여야 함")
+                .isEqualTo(COUPON_STOCK);
 
         // 3. 발급된 쿠폰은 모두 미사용 상태여야 함
         assertThat(issuedUserCoupons).allMatch(uc -> !uc.isUsed());
+
+        System.out.println("테스트 완료 - 총 발급: " + issuedUserCoupons.size() + "개");
     }
 
     @Test
@@ -220,7 +263,7 @@ class CouponIssueIntegrationTest {
         // when: 첫 번째 발급 요청
         issueCouponUseCase.issueCoupon(userId, couponId);
 
-        // Consumer 처리 대기
+        // Kafka Consumer 처리 대기
         Thread.sleep(2000);
 
         // then: 두 번째 발급 시도 시 예외 발생 (중복 체크)
@@ -251,7 +294,7 @@ class CouponIssueIntegrationTest {
                 try {
                     issueCouponUseCase.issueCoupon(userId, couponId);
                     successCount.incrementAndGet();
-                    System.out.println("Queue 추가 성공: userId=" + userId);
+                    System.out.println("Kafka 발행 성공: userId=" + userId);
                 } catch (CouponException e) {
                     // 중복 발급 체크에서 실패
                     failCount.incrementAndGet();
@@ -271,10 +314,10 @@ class CouponIssueIntegrationTest {
         // then: 검증
         assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
 
-        // Queue 추가는 Race Condition으로 1번 또는 2번 성공 가능
-        System.out.println("Queue 추가 성공: " + successCount.get() + ", 실패: " + failCount.get());
+        // Kafka 발행은 Race Condition으로 1번 또는 2번 성공 가능
+        System.out.println("Kafka 발행 성공: " + successCount.get() + ", 실패: " + failCount.get());
 
-        // Consumer 처리 대기
+        // Kafka Consumer 처리 대기
         Thread.sleep(3000);
 
         // 중요: 쿠폰은 DB Unique 제약 조건으로 1개만 발급되어야 함
@@ -315,7 +358,7 @@ class CouponIssueIntegrationTest {
         executorService.shutdown();
         assertThat(completed).as("모든 스레드가 완료되어야 함").isTrue();
 
-        // Consumer 처리 대기 (재고 소진까지)
+        // Kafka Consumer 처리 대기 (재고 소진까지)
         int maxWaitSeconds = 60;
         for (int i = 0; i < maxWaitSeconds; i++) {
             Thread.sleep(1000);
@@ -325,10 +368,10 @@ class CouponIssueIntegrationTest {
             }
         }
 
-        // then: 51번째 사용자는 Queue 추가는 되지만 실제 발급은 실패
+        // then: 51번째 사용자는 Kafka 발행은 되지만 실제 발급은 실패
         issueCouponUseCase.issueCoupon(userIds.get(COUPON_STOCK), couponId);
 
-        // Consumer가 처리하면서 재고 부족으로 실패 (발급 수량은 50 유지)
+        // Kafka Consumer가 처리하면서 재고 부족으로 실패 (발급 수량은 50 유지)
         Thread.sleep(3000);
 
         // 검증: 발급 수량이 총 수량과 같음 (50개)
@@ -356,22 +399,22 @@ class CouponIssueIntegrationTest {
         Coupon savedExpiredCoupon = couponRepository.save(expiredCoupon);
         Long expiredCouponId = savedExpiredCoupon.getCouponId();
 
-        // when & then: 발급 요청 시 만료 체크
+        // when & then: Kafka 발행 전 만료 체크로 예외 발생
         assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userIds.get(0), expiredCouponId))
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining("만료된 쿠폰입니다");
     }
 
     @Test
-    @DisplayName("통합 테스트 - 전체 발급 플로우 검증 (사용자 조회 → 쿠폰 검증 → 발급)")
+    @DisplayName("통합 테스트 - 전체 발급 플로우 검증 (사용자 조회 → 쿠폰 검증 → Kafka 발행 → Consumer 처리 → 발급)")
     void issueCoupon_fullFlow_verification() throws InterruptedException {
         // given
         Long userId = userIds.get(0);
 
-        // when: 쿠폰 발급 요청
+        // when: 쿠폰 발급 요청 (Kafka로 메시지 발행)
         issueCouponUseCase.issueCoupon(userId, couponId);
 
-        // Consumer 처리 대기
+        // Kafka Consumer 처리 대기
         Thread.sleep(2000);
 
         // then: 각 레이어별 상태 검증

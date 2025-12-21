@@ -1,7 +1,6 @@
 package com.sparta.ecommerce.application.product;
 
 import com.sparta.ecommerce.application.order.OrderService;
-import com.sparta.ecommerce.application.product.event.StockDeductionFailedEvent;
 import com.sparta.ecommerce.application.product.event.StockReservedEvent;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.coupon.dto.ProductResponse;
@@ -217,10 +216,6 @@ public class ProductService {
 
                     log.info("락 획득 및 재고 차감 완료 - OrderId: {}", orderId);
 
-                    // 재고 차감 성공 이벤트 발행
-                    eventPublisher.publishEvent(new StockReservedEvent(orderId, userId));
-                    log.debug("재고 차감 성공 이벤트 발행 - OrderId: {}", orderId);
-
                 } finally {
                     // 락 해제
                     if (multiLock.isHeldByCurrentThread()) {
@@ -237,13 +232,8 @@ public class ProductService {
 
         } catch (Exception e) {
             log.error("재고 차감 실패 - OrderId: {}, Error: {}", orderId, e.getMessage(), e);
-
-            // 재고 차감 실패 이벤트 발행
-            eventPublisher.publishEvent(new StockDeductionFailedEvent(
-                    orderId,
-                    userId,
-                    e.getMessage()
-            ));
+            // Kafka Consumer에서 예외를 처리하도록 예외를 다시 던짐
+            throw new RuntimeException("재고 차감 실패: " + e.getMessage(), e);
         }
     }
 

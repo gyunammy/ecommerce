@@ -1,5 +1,6 @@
 package com.sparta.ecommerce.application.coupon;
 
+import com.sparta.ecommerce.application.coupon.event.CouponIssueEvent;
 import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.domain.coupon.CouponRepository;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
@@ -9,19 +10,20 @@ import com.sparta.ecommerce.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.ListOperations;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static com.sparta.ecommerce.domain.coupon.exception.CouponErrorCode.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
 
@@ -41,16 +43,13 @@ class IssueCouponUseCaseTest {
     private UserCouponService userCouponService;
 
     @Mock
-    private RedisTemplate<String, String> redisTemplate;
-
-    @Mock
-    private ListOperations<String, String> listOperations;
+    private KafkaTemplate<String, CouponIssueEvent> kafkaTemplate;
 
     @InjectMocks
     private IssueCouponUseCase issueCouponUseCase;
 
     @Test
-    @DisplayName("쿠폰 발급 요청 성공 - Queue에 추가")
+    @DisplayName("쿠폰 발급 요청 성공 - Kafka 메시지 발행")
     void issueCoupon_success() {
         // given
         Long userId = 1L;
@@ -72,7 +71,6 @@ class IssueCouponUseCaseTest {
         given(userService.getUserById(userId)).willReturn(user);
         given(couponService.getCouponById(couponId)).willReturn(coupon);
         given(userCouponService.hasCoupon(userId, couponId)).willReturn(false);
-        given(redisTemplate.opsForList()).willReturn(listOperations);
 
         // when
         issueCouponUseCase.issueCoupon(userId, couponId);
@@ -81,7 +79,45 @@ class IssueCouponUseCaseTest {
         verify(userService).getUserById(userId);
         verify(couponService).getCouponById(couponId);
         verify(userCouponService).hasCoupon(userId, couponId);
-        verify(listOperations).leftPush(anyString(), eq("1:1"));
+
+        // Kafka 메시지 발행 검증
+        ArgumentCaptor<CouponIssueEvent> eventCaptor = ArgumentCaptor.forClass(CouponIssueEvent.class);
+        verify(kafkaTemplate).send(eq("coupon-issue-topic"), eventCaptor.capture());
+
+        CouponIssueEvent capturedEvent = eventCaptor.getValue();
+        assertThat(capturedEvent.userId()).isEqualTo(userId);
+        assertThat(capturedEvent.couponId()).isEqualTo(couponId);
+    }
+
+    @Test
+    @DisplayName("만료된 쿠폰 발급 요청 시 예외 발생 - Kafka 메시지 발행 안됨")
+    void issueCoupon_expired() {
+        // given
+        Long userId = 1L;
+        Long couponId = 1L;
+
+        User user = new User(userId, "testUser", 0, 0L, LocalDateTime.now());
+        Coupon expiredCoupon = new Coupon(
+                couponId,
+                "만료된 쿠폰",
+                "RATE",
+                10,
+                100,
+                50,
+                0,
+                LocalDateTime.now().minusDays(60),
+                LocalDateTime.now().minusDays(30)  // 만료됨
+        );
+
+        given(userService.getUserById(userId)).willReturn(user);
+        given(couponService.getCouponById(couponId)).willReturn(expiredCoupon);
+
+        // when & then
+        assertThatThrownBy(() -> issueCouponUseCase.issueCoupon(userId, couponId))
+                .isInstanceOf(CouponException.class)
+                .hasMessageContaining(COUPON_EXPIRED.getMessage());
+
+        verify(kafkaTemplate, never()).send(any(), any(CouponIssueEvent.class));
     }
 
     @Test
@@ -171,7 +207,7 @@ class IssueCouponUseCaseTest {
                 .isInstanceOf(CouponException.class)
                 .hasMessageContaining(COUPON_ALREADY_ISSUED.getMessage());
 
-        verify(listOperations, never()).leftPush(anyString(), anyString());
+        verify(kafkaTemplate, never()).send(any(), any(CouponIssueEvent.class));
     }
 
     @Test

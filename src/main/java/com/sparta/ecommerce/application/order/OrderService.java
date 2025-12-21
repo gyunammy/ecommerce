@@ -1,11 +1,5 @@
 package com.sparta.ecommerce.application.order;
 
-import com.sparta.ecommerce.application.coupon.event.CouponUsageFailedEvent;
-import com.sparta.ecommerce.application.order.event.OrderCompletionCleanupEvent;
-import com.sparta.ecommerce.application.product.event.StockDeductionFailedEvent;
-import com.sparta.ecommerce.application.product.event.StockRestoreEvent;
-import com.sparta.ecommerce.application.user.event.PointDeductionFailedEvent;
-import com.sparta.ecommerce.application.user.event.PointRestoreEvent;
 import com.sparta.ecommerce.domain.cart.dto.CartItemResponse;
 import com.sparta.ecommerce.domain.order.OrderItemRepository;
 import com.sparta.ecommerce.domain.order.OrderRepository;
@@ -15,7 +9,6 @@ import com.sparta.ecommerce.domain.order.exception.OrderException;
 import com.sparta.ecommerce.domain.product.entity.Product;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +26,6 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
-    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 주문 생성
@@ -120,6 +112,41 @@ public class OrderService {
     }
 
     /**
+     * 주문을 완료 상태로 변경합니다.
+     * 이 작업은 멱등성을 가집니다. 이미 완료되었거나 실패한 주문은 추가 작업을 수행하지 않습니다.
+     *
+     * @param orderId 완료 처리할 주문 ID
+     * @return 상태 변경에 성공했는지 여부 (이미 완료/실패 상태인 경우 false 반환)
+     */
+    @Transactional
+    public boolean completeOrder(Long orderId) {
+        try {
+            Order order = getOrderById(orderId);
+
+            // 멱등성 보장: 이미 완료된 주문은 추가 작업 수행하지 않음
+            if (order.getStatus().equals("COMPLETED")) {
+                log.info("이미 완료 처리된 주문입니다. OrderId: {}", orderId);
+                return false;
+            }
+
+            // 실패한 주문은 완료 처리할 수 없음
+            if (order.getStatus().equals("FAILED")) {
+                log.warn("실패한 주문은 완료 처리할 수 없습니다. OrderId: {}", orderId);
+                return false;
+            }
+
+            order.setStatus("COMPLETED");
+            updateOrder(order);
+            log.info("주문 상태를 COMPLETED로 변경했습니다. OrderId: {}", orderId);
+            return true;
+        } catch (Exception e) {
+            log.error("주문 완료 처리 중 오류 발생. OrderId: {}, Error: {}", orderId, e.getMessage(), e);
+            // 이 단계에서 예외가 발생하면 심각한 문제이므로, 롤백 후 별도 조치가 필요.
+            throw new RuntimeException("주문 완료 상태 변경 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    /**
      * 주문을 실패 상태로 변경합니다.
      * 이 작업은 멱등성을 가집니다. 이미 실패한 주문은 추가 작업을 수행하지 않습니다.
      *
@@ -130,10 +157,19 @@ public class OrderService {
     public boolean failOrder(Long orderId) {
         try {
             Order order = getOrderById(orderId);
+
+            // 멱등성 보장: 이미 실패한 주문은 추가 작업 수행하지 않음
             if (order.getStatus().equals("FAILED")) {
                 log.info("이미 실패 처리된 주문입니다. OrderId: {}", orderId);
                 return false;
             }
+
+            // 이미 완료된 주문은 실패 처리할 수 없음
+            if (order.getStatus().equals("COMPLETED")) {
+                log.warn("이미 완료된 주문은 실패 처리할 수 없습니다. OrderId: {}", orderId);
+                return false;
+            }
+
             order.setStatus("FAILED");
             updateOrder(order);
             log.warn("주문 상태를 FAILED로 변경했습니다. OrderId: {}", orderId);
@@ -145,70 +181,4 @@ public class OrderService {
         }
     }
 
-    /**
-     * 재고 차감 실패 시 보상 트랜잭션
-     *
-     * 재고 차감 실패 시 주문을 FAILED 상태로 변경하고 추적 정보를 정리합니다.
-     * 재고, 포인트, 쿠폰 모두 차감/사용 전이므로 복구할 것이 없습니다.
-     *
-     * @param event 재고 차감 실패 이벤트
-     */
-    @Transactional
-    public void handleStockDeductionFailure(StockDeductionFailedEvent event) {
-        log.warn("재고 차감 실패 이벤트 수신 - OrderId: {}, Reason: {}",
-                event.orderId(), event.errorMessage());
-        boolean isFailed = failOrder(event.orderId());
-
-        if (isFailed) {
-            log.info("주문 실패 처리 후 보상 이벤트를 발행합니다. OrderId: {}", event.orderId());
-            // 재고, 포인트, 쿠폰 모두 차감/사용 전이므로 OrderCompletionCleanupEvent만 발행
-            eventPublisher.publishEvent(new OrderCompletionCleanupEvent(event.orderId()));
-            log.info("보상 이벤트 발행 완료 (재고 차감 실패) - OrderId: {}", event.orderId());
-        }
-    }
-
-    /**
-     * 포인트 차감 실패 시 보상 트랜잭션
-     *
-     * 포인트 차감 실패 시 주문을 FAILED 상태로 변경하고 재고를 복구합니다.
-     * 재고는 이미 차감되었으므로 복구가 필요합니다.
-     *
-     * @param event 포인트 차감 실패 이벤트
-     */
-    @Transactional
-    public void handlePointDeductionFailure(PointDeductionFailedEvent event) {
-        log.warn("포인트 차감 실패 이벤트 수신 - OrderId: {}, Reason: {}",
-                event.orderId(), event.errorMessage());
-        boolean isFailed = failOrder(event.orderId());
-
-        if (isFailed) {
-            log.info("주문 실패 처리 후 보상 이벤트를 발행합니다. OrderId: {}", event.orderId());
-            eventPublisher.publishEvent(new OrderCompletionCleanupEvent(event.orderId()));
-            eventPublisher.publishEvent(new StockRestoreEvent(event.cartItems())); // 재고는 복구 필요
-            log.info("보상 이벤트 발행 완료 (포인트 차감 실패) - OrderId: {}", event.orderId());
-        }
-    }
-
-    /**
-     * 쿠폰 사용 실패 시 보상 트랜잭션
-     *
-     * 쿠폰 사용 실패 시 주문을 FAILED 상태로 변경하고 포인트와 재고를 복구합니다.
-     * 재고와 포인트는 이미 차감되었으므로 복구가 필요합니다.
-     *
-     * @param event 쿠폰 사용 실패 이벤트
-     */
-    @Transactional
-    public void handleCouponUsageFailure(CouponUsageFailedEvent event) {
-        log.warn("쿠폰 사용 실패 이벤트 수신 - OrderId: {}, Reason: {}",
-                event.orderId(), event.errorMessage());
-        boolean isFailed = failOrder(event.orderId());
-
-        if (isFailed) {
-            log.info("주문 실패 처리 후 보상 이벤트를 발행합니다. OrderId: {}", event.orderId());
-            eventPublisher.publishEvent(new OrderCompletionCleanupEvent(event.orderId()));
-            eventPublisher.publishEvent(new PointRestoreEvent(event.userId(), event.finalAmount()));
-            eventPublisher.publishEvent(new StockRestoreEvent(event.cartItems()));
-            log.info("보상 이벤트 발행 완료 (쿠폰 사용 실패) - OrderId: {}", event.orderId());
-        }
-    }
 }

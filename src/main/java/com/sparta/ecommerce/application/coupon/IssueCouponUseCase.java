@@ -1,5 +1,6 @@
 package com.sparta.ecommerce.application.coupon;
 
+import com.sparta.ecommerce.application.coupon.event.CouponIssueEvent;
 import com.sparta.ecommerce.application.user.UserService;
 import com.sparta.ecommerce.domain.coupon.CouponRepository;
 import com.sparta.ecommerce.domain.coupon.entity.Coupon;
@@ -8,8 +9,9 @@ import com.sparta.ecommerce.domain.coupon.exception.CouponException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,12 +23,11 @@ public class IssueCouponUseCase {
     private final CouponRepository couponRepository;
     private final CouponService couponService;
     private final UserCouponService userCouponService;
-    private final RedisTemplate<String, String> redisTemplate;
+    private final KafkaTemplate<String, CouponIssueEvent> kafkaTemplate;
 
-    private static final String QUEUE_KEY = "coupon:issue:queue";
 
     /**
-     * 쿠폰 발급 요청 (Queue에 추가)
+     * 쿠폰 발급 요청 (Kafka로 메시지 발행)
      */
     public void issueCoupon(Long userId, Long couponId) {
         // 1. 사용자 존재 여부 확인
@@ -43,15 +44,15 @@ public class IssueCouponUseCase {
             throw new CouponException(CouponErrorCode.COUPON_ALREADY_ISSUED);
         }
 
-        // 4. Queue에 추가 (userId:couponId 형태)
-        String queueData = userId + ":" + couponId;
-        redisTemplate.opsForList().leftPush(QUEUE_KEY, queueData);
-        log.info("쿠폰 발급 요청 Queue 추가 - {}", queueData);
+        // 4. Kafka로 쿠폰 발급 이벤트 발행
+        CouponIssueEvent event = new CouponIssueEvent(userId, couponId);
+        kafkaTemplate.send("coupon-issue-topic", event);
+        log.info("쿠폰 발급 이벤트 Kafka 발행 - userId: {}, couponId: {}", userId, couponId);
     }
 
     /**
-     * 쿠폰 실제 발급 처리 (Queue Consumer에서 호출)
-     * Redis Queue의 순차 처리 + DB unique constraint + 낙관적 락으로 동시성 제어
+     * 쿠폰 실제 발급 처리 (Kafka Consumer에서 호출)
+     * Kafka의 순차 처리 + DB unique constraint + 낙관적 락으로 동시성 제어
      */
     @Transactional
     public void executeIssueCoupon(Long userId, Long couponId) {
