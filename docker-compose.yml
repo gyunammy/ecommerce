@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  mysql:
+    image: mysql:8.0
+    container_name: sparta-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ecommerce
+      MYSQL_USER: sparta
+      MYSQL_PASSWORD: sparta123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - sparta-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     container_name: sparta-redis
@@ -41,8 +62,125 @@ services:
     networks:
       - sparta-network
 
+  influxdb:
+    image: influxdb:1.8
+    container_name: sparta-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      INFLUXDB_DB: k6
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    restart: unless-stopped
+    networks:
+      - sparta-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sparta-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - sparta-network
+
+  db-reset:
+    image: mysql:8.0
+    container_name: sparta-db-reset
+    volumes:
+      - ./src/main/resources/db:/sql
+    networks:
+      - sparta-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: >
+      sh -c "
+      echo '========================================' &&
+      echo '=== 부하테스트 데이터 초기화 시작 ===' &&
+      echo '========================================' &&
+      echo '' &&
+      echo '[1/1] 테스트 데이터 초기화 및 삽입 중...' &&
+      mysql -h mysql -usparta -psparta123 ecommerce < /sql/data.sql &&
+      echo '' &&
+      echo '✓ 데이터 초기화 완료' &&
+      echo '  - 상품: 100개' &&
+      echo '' &&
+      echo '========================================' &&
+      echo '=== 초기화 완료, 부하테스트 시작 준비 ===' &&
+      echo '========================================'
+      "
+    profiles:
+      - k6
+      - k6-popular
+
+  # 상품 조회 부하테스트
+  k6:
+    image: grafana/k6:latest
+    container_name: sparta-k6
+    volumes:
+      - ./performance/k6-scripts:/scripts
+      - ./performance/k6-results:/results
+    environment:
+      - BASE_URL=http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - sparta-network
+    depends_on:
+      db-reset:
+        condition: service_completed_successfully
+      influxdb:
+        condition: service_started
+    command: >
+      run /scripts/k6-product-load-test.js
+      --out influxdb=http://influxdb:8086/k6
+      --out json=/results/k6-result.json
+      --summary-export=/results/k6-summary.json
+    profiles:
+      - k6
+
+  # 인기 상품 조회 부하테스트
+  k6-popular:
+    image: grafana/k6:latest
+    container_name: sparta-k6-popular
+    volumes:
+      - ./performance/k6-scripts:/scripts
+    environment:
+      - BASE_URL=http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - sparta-network
+    depends_on:
+      db-reset:
+        condition: service_completed_successfully
+      influxdb:
+        condition: service_started
+    command: >
+      run /scripts/k6-popular-products-load-test.js
+      --out influxdb=http://influxdb:8086/k6
+    profiles:
+      - k6-popular
+
 volumes:
+  mysql-data:
+    driver: local
   redis-data:
+    driver: local
+  influxdb-data:
+    driver: local
+  grafana-data:
     driver: local
 
 networks:

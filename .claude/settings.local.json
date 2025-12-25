@@ -3,7 +3,10 @@
     "allow": [
       "Bash(./gradlew clean test:*)",
       "Bash(cat:*)",
-      "Bash(./gradlew test:*)"
+      "Bash(./gradlew test:*)",
+      "Bash(docker exec:*)",
+      "Bash(curl:*)",
+      "Bash(docker logs:*)"
     ]
   }
 }

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS `user` (
     point      INT         DEFAULT 0                  COMMENT '보유 포인트',
     version    BIGINT      DEFAULT 0                  COMMENT '낙관적 락 버전',
     created_at DATETIME    DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시'
-);
+);;
 
 -- 상품 테이블
 CREATE TABLE IF NOT EXISTS product (
@@ -14,10 +14,13 @@ CREATE TABLE IF NOT EXISTS product (
     description  VARCHAR(200)                                                       COMMENT '상품 설명',
     quantity     INT          DEFAULT 0                                             COMMENT '재고 수량',
     price        INT          NOT NULL                                              COMMENT '상품 가격',
-    views        INT          DEFAULT 0                                             COMMENT '조회수',
+    view_count   INT          DEFAULT 0                                             COMMENT '조회수',
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP                             COMMENT '생성일시',
-    updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시'
-);
+    update_at    DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    -- 인기상품 조회 최적화를 위한 커버링 인덱스
+    -- SELECT * FROM product ORDER BY view_count DESC 쿼리를 인덱스만으로 처리
+    INDEX idx_product_popular_covering(view_count DESC, product_id, product_name, price, quantity, description, created_at, update_at)
+);;
 
 -- 쿠폰 테이블
 CREATE TABLE IF NOT EXISTS coupon (
@@ -30,7 +33,7 @@ CREATE TABLE IF NOT EXISTS coupon (
     used_quantity   INT          DEFAULT 0                  COMMENT '사용 수량',
     create_at       DATETIME     DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시',
     expires_at      DATETIME                                COMMENT '만료일시'
-);
+);;
 
 -- 사용자별 쿠폰 테이블
 CREATE TABLE IF NOT EXISTS user_coupon (
@@ -40,10 +43,10 @@ CREATE TABLE IF NOT EXISTS user_coupon (
     used           BOOLEAN   DEFAULT FALSE              COMMENT '사용 여부',
     issued_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP  COMMENT '발급일시',
     used_at        TIMESTAMP NULL                       COMMENT '사용일시',
-    UNIQUE(user_id, coupon_id)
-);
-CREATE INDEX idx_user_coupon_user_id   ON user_coupon(user_id);
-CREATE INDEX idx_user_coupon_coupon_id ON user_coupon(coupon_id);
+    UNIQUE(user_id, coupon_id),
+    INDEX idx_user_coupon_user_id(user_id),
+    INDEX idx_user_coupon_coupon_id(coupon_id)
+);;
 
 -- 주문 테이블
 CREATE TABLE IF NOT EXISTS `order` (
@@ -54,9 +57,10 @@ CREATE TABLE IF NOT EXISTS `order` (
     discount_amount INT         DEFAULT 0                  COMMENT '할인 금액',
     used_point      INT         DEFAULT 0                  COMMENT '사용 포인트',
     status          VARCHAR(50) NOT NULL                   COMMENT '주문 상태 (PENDING, COMPLETED, CANCELLED)',
-    created_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP  COMMENT '주문일시'
-);
-CREATE INDEX idx_order_user_id ON `order`(user_id);
+    created_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP  COMMENT '주문일시',
+    INDEX idx_order_user_id(user_id),
+    INDEX idx_order_status(status)
+);;
 
 -- 주문 상품 상세 테이블
 CREATE TABLE IF NOT EXISTS order_item (
@@ -67,10 +71,10 @@ CREATE TABLE IF NOT EXISTS order_item (
     description   VARCHAR(200)                            COMMENT '상품 설명',
     quantity      INT          NOT NULL                   COMMENT '수량',
     price         INT          NOT NULL                   COMMENT '단가',
-    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시'
-);
-CREATE INDEX idx_order_item_order_id   ON order_item(order_id);
-CREATE INDEX idx_order_item_product_id ON order_item(product_id);
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시',
+    INDEX idx_order_item_order_id(order_id),
+    INDEX idx_order_item_product_id(product_id)
+);;
 
 -- 포인트 이력 테이블
 CREATE TABLE IF NOT EXISTS point_log (
@@ -79,18 +83,18 @@ CREATE TABLE IF NOT EXISTS point_log (
     type          VARCHAR(50) NOT NULL                   COMMENT '타입 (EARN: 적립, USE: 사용)',
     point_amount  INT         NOT NULL                   COMMENT '포인트 변동량',
     point_balance INT         NOT NULL                   COMMENT '잔여 포인트',
-    created_at    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시'
-);
-CREATE INDEX idx_point_log_user_id ON point_log(user_id);
+    created_at    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP  COMMENT '생성일시',
+    INDEX idx_point_log_user_id(user_id)
+);;
 
 -- 장바구니 테이블
 CREATE TABLE IF NOT EXISTS cart_item (
     cart_item_id BIGINT    PRIMARY KEY AUTO_INCREMENT                            COMMENT '장바구니 아이템 ID',
     user_id      BIGINT    NOT NULL                                              COMMENT '사용자 ID',
     product_id   BIGINT    NOT NULL                                              COMMENT '상품 ID',
-    quantity     INT NOT   NULL                                                  COMMENT '수량',
+    quantity     INT       NOT NULL                                              COMMENT '수량',
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP                             COMMENT '추가일시',
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시'
-);
-CREATE INDEX idx_cart_item_user_id    ON cart_item(user_id);
-CREATE INDEX idx_cart_item_product_id ON cart_item(product_id);
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    INDEX idx_cart_item_user_id(user_id),
+    INDEX idx_cart_item_product_id(product_id)
+);;

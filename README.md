@@ -123,7 +123,6 @@ flowchart LR
 
 ### 5.1 Consumer Group
 
-* 하나의 토픽에 발행된 메세지를 여러 서비스가 컨슘하기 위해 Consumer Group을 설정
 * 하나의 group 내에서 partition은 **consumer 1개에만 할당**
 * 이를 통해 병렬 처리와 확장성 확보
 

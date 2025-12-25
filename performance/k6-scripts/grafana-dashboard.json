@@ -1,0 +1,355 @@
+{
+  "dashboard": {
+    "title": "k6 Load Test - VU Analysis",
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "5s",
+    "time": {
+      "from": "now-5m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Response Time by VU",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT mean(\"value\") FROM \"http_req_duration\" WHERE \"name\"='fetch_products' AND $timeFilter GROUP BY time($__interval), \"vu_id\" fill(none)",
+            "rawQuery": true,
+            "resultFormat": "time_series"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "fillOpacity": 0,
+              "showPoints": "auto"
+            },
+            "unit": "ms"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total Requests per Second",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT sum(\"value\") FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval) fill(null)",
+            "rawQuery": true,
+            "resultFormat": "time_series"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Active VUs",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT max(\"value\") FROM \"vus\" WHERE $timeFilter GROUP BY time($__interval)",
+            "rawQuery": true,
+            "resultFormat": "time_series"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Response Time Stats",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT mean(\"value\") FROM \"http_req_duration\" WHERE \"name\"='fetch_products' AND $timeFilter",
+            "rawQuery": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms"
+          }
+        },
+        "options": {
+          "graphMode": "none",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 5,
+        "title": "P95 Response Time",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE \"name\"='fetch_products' AND $timeFilter",
+            "rawQuery": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms"
+          }
+        },
+        "options": {
+          "graphMode": "none",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 6,
+        "title": "Request Count by VU",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT count(\"value\") FROM \"http_req_duration\" WHERE \"name\"='fetch_products' AND $timeFilter GROUP BY \"vu_id\"",
+            "rawQuery": true,
+            "resultFormat": "table"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "RPS vs P95 Response Time",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT non_negative_derivative(sum(\"value\"), 1s) FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval) fill(null)",
+            "rawQuery": true,
+            "resultFormat": "time_series",
+            "alias": "RPS"
+          },
+          {
+            "refId": "B",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE \"name\"='fetch_products' AND $timeFilter GROUP BY time($__interval)",
+            "rawQuery": true,
+            "resultFormat": "time_series",
+            "alias": "P95 Response Time"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 10,
+              "showPoints": "never",
+              "axisPlacement": "auto"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "RPS"},
+              "properties": [
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "left"
+                },
+                {
+                  "id": "unit",
+                  "value": "reqps"
+                },
+                {
+                  "id": "color",
+                  "value": {"mode": "fixed", "fixedColor": "blue"}
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "P95 Response Time"},
+              "properties": [
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "right"
+                },
+                {
+                  "id": "unit",
+                  "value": "ms"
+                },
+                {
+                  "id": "color",
+                  "value": {"mode": "fixed", "fixedColor": "orange"}
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi",
+            "sort": "none"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Error Rate",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 32},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "df82tn0e77474e"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": {
+              "type": "influxdb",
+              "uid": "df82tn0e77474e"
+            },
+            "query": "SELECT mean(\"value\") * 100 FROM \"http_req_failed\" WHERE $timeFilter GROUP BY time($__interval) fill(null)",
+            "rawQuery": true,
+            "resultFormat": "time_series",
+            "alias": "Error Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "showPoints": "never"
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": 0,
+                  "color": "green"
+                },
+                {
+                  "value": 1,
+                  "color": "yellow"
+                },
+                {
+                  "value": 5,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "single",
+            "sort": "none"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Application Metrics (CPU/Memory/DB Pool)",
+        "type": "text",
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 32},
+        "options": {
+          "mode": "markdown",
+          "content": "## Application Metrics\n\n애플리케이션 메트릭을 보려면 다음을 설정해야 합니다:\n\n### 필요한 설정:\n1. **Spring Actuator 활성화**\n   - `spring-boot-starter-actuator` 의존성 추가\n   - Prometheus endpoint 노출\n\n2. **Micrometer Prometheus 설정**\n   - `micrometer-registry-prometheus` 의존성 추가\n   - `/actuator/prometheus` 엔드포인트 활성화\n\n3. **Prometheus 설정**\n   - Prometheus 서버 추가 (docker-compose)\n   - Spring Boot 애플리케이션 스크래핑 설정\n\n4. **Grafana Datasource**\n   - Prometheus 데이터소스 추가\n   - JVM/DB Pool 메트릭 패널 생성\n\n### 측정 가능한 메트릭:\n- **CPU**: `process.cpu.usage`, `system.cpu.usage`\n- **Memory**: `jvm.memory.used`, `jvm.memory.max`\n- **DB Pool**: `hikaricp.connections.active`, `hikaricp.connections.idle`\n- **GC**: `jvm.gc.pause`, `jvm.gc.memory.allocated`"
+        }
+      }
+    ]
+  },
+  "overwrite": true
+}
