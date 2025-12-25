@@ -122,6 +122,7 @@ services:
       "
     profiles:
       - k6
+      - k6-popular
 
   # 상품 조회 부하테스트
   k6:
@@ -148,6 +149,29 @@ services:
       --summary-export=/results/k6-summary.json
     profiles:
       - k6
+
+  # 인기 상품 조회 부하테스트
+  k6-popular:
+    image: grafana/k6:latest
+    container_name: sparta-k6-popular
+    volumes:
+      - ./performance/k6-scripts:/scripts
+    environment:
+      - BASE_URL=http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - sparta-network
+    depends_on:
+      db-reset:
+        condition: service_completed_successfully
+      influxdb:
+        condition: service_started
+    command: >
+      run /scripts/k6-popular-products-load-test.js
+      --out influxdb=http://influxdb:8086/k6
+    profiles:
+      - k6-popular
 
 volumes:
   mysql-data:

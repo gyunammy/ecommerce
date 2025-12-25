@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS product (
     price        INT          NOT NULL                                              COMMENT '상품 가격',
     view_count   INT          DEFAULT 0                                             COMMENT '조회수',
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP                             COMMENT '생성일시',
-    update_at    DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시'
+    update_at    DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    -- 인기상품 조회 최적화를 위한 커버링 인덱스
+    -- SELECT * FROM product ORDER BY view_count DESC 쿼리를 인덱스만으로 처리
+    INDEX idx_product_popular_covering(view_count DESC, product_id, product_name, price, quantity, description, created_at, update_at)
 );;
 
 -- 쿠폰 테이블
@@ -55,7 +58,8 @@ CREATE TABLE IF NOT EXISTS `order` (
     used_point      INT         DEFAULT 0                  COMMENT '사용 포인트',
     status          VARCHAR(50) NOT NULL                   COMMENT '주문 상태 (PENDING, COMPLETED, CANCELLED)',
     created_at      TIMESTAMP   DEFAULT CURRENT_TIMESTAMP  COMMENT '주문일시',
-    INDEX idx_order_user_id(user_id)
+    INDEX idx_order_user_id(user_id),
+    INDEX idx_order_status(status)
 );;
 
 -- 주문 상품 상세 테이블

@@ -4,6 +4,20 @@
 -- 상품 목록 조회 성능 테스트를 위한 데이터
 
 -- ==========================================
+-- 0. 테이블 생성 (존재하지 않는 경우)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS product (
+    product_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(255),
+    description VARCHAR(1000),
+    quantity INT,
+    price INT,
+    view_count INT,
+    created_at DATETIME,
+    update_at DATETIME
+);
+
+-- ==========================================
 -- 1. 기존 테스트 데이터 삭제
 -- ==========================================
 DELETE FROM product WHERE product_id BETWEEN 1 AND 100;
